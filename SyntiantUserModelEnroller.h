@@ -21,7 +21,7 @@
 #include <soundtrigger/SoundTrigger.h>
 #include <soundtrigger/SoundTriggerCallback.h>
 
-#include "syntiant_soundmodel.h"
+#include <syntiant_soundmodel.h>
 
 class SyntiantUserModelEnroller {
  public:
@@ -35,7 +35,7 @@ class SyntiantUserModelEnroller {
 
   int clear();
   int add(uint8_t* data, unsigned int data_len);
-  int train(struct sound_trigger_phrase_sound_model* src_model, uint8_t** buffer, uint32_t* size);
+    int train(struct sound_trigger_phrase_sound_model* src_model, uint8_t** buffer, uint32_t* size, int user_id = 0);
 
  private:
   unsigned int mCurrentIdx;

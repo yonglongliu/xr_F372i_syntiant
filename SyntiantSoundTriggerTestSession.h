@@ -38,7 +38,7 @@ class SyntiantFakeVoiceAssistant : public SoundTriggerCallback {
 
  public:
   SyntiantFakeVoiceAssistant(std::string modelFile, std::string savedVMFile,
-                             bool useShortOutput = false, bool userEnrollEnabled = false,
+                             bool useShortOutput = false, bool userEnrollEnabled = false, int userId = 0,
                              unsigned int recognition_modes = RECOGNITION_MODE_VOICE_TRIGGER,
                              unsigned int record_len = 0);
   ~SyntiantFakeVoiceAssistant();
@@ -87,6 +87,7 @@ class SyntiantFakeVoiceAssistant : public SoundTriggerCallback {
   /* speaker ID relaated */
   bool mShortOutput;
   bool mEnrollEnabled;
+  int mUserId;
   std::string mPhrases[SOUND_TRIGGER_MAX_PHRASES];
   SyntiantUserModelEnroller mSpeakerIDEnroller;
   unsigned int mRecognitionModes;

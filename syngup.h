@@ -42,7 +42,7 @@ struct phrase {
   /* includes null terminator */
   char text[SYN_SOUND_TRIGGER_MAX_STRING_LEN];
   /* includes null terminator */
-  uint8_t users[SYN_SOUND_TRIGGER_MAX_USERS];
+  uint32_t users[SYN_SOUND_TRIGGER_MAX_USERS];
 };
 
 struct synpkg_metadata {

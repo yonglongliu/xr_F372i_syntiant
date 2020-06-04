@@ -2,7 +2,7 @@
  * SYNTIANT CONFIDENTIAL
  * _____________________
  *
- *   Copyright (c) 2018 Syntiant Corporation
+ *   Copyright (c) 2018-2020 Syntiant Corporation
  *   All Rights Reserved.
  *
  *  NOTICE:  All information contained herein is, and remains the property of
@@ -23,11 +23,11 @@
 extern "C" {
 #endif
 
-#define SYNTIANT_SPEAKER_ID_API_VERSION 3
+#define SYNTIANT_SPEAKER_ID_API_VERSION 4
 
 #define SYNTIANT_SPEAKER_ID_DEFAULT_OPT_CNT 14
 #define SYNTIANT_SPEAKER_ID_DEFAULT_UTTER_CNT 5
-#define SYNTIANT_SPEAKER_ID_WW_LEN 19200
+#define SYNTIANT_SPEAKER_ID_WW_LEN 33600
 
 enum syntiant_st_speaker_id_errors_e {
   SYNTIANT_ST_SPEAKER_ID_ERROR_NONE = 0,
@@ -74,6 +74,26 @@ int syntiant_st_speaker_id_engine_init(unsigned int max_users, unsigned int leng
  */
 int syntiant_st_speaker_id_engine_uninit(void* spkr_id_engine);
 
+/**
+ * @brief it will set the operating point for speaker id engine
+ *
+ * @param[in] sm spkr_id_engine handle to speaker id engine
+ * @param[in] opt_pnt pass the operating point you want to set
+ * @return int error code
+ * SYNTIANT_ST_SPEAKER_ID_ERROR_NONE -> Success
+ * SYNTIANT_ST_SPEAKER_ID_ERROR_INVALID_OPT_PT -> invalid operating point set
+ */
+int syntiant_st_speaker_id_engine_set_opt_pnt(void* sm, short opt_cnt);
+
+/**
+ * @brief it gives the current operating point set for speaker id engine
+ *
+ * @param[in] sm spkr_id_engine handle to speaker id engine
+ * @param[out] opt_pnt returns the operating which is set in speaker id engine
+ * @return int error code
+ * SYNTIANT_ST_SPEAKER_ID_ERROR_NONE -> Success
+ */
+int syntiant_st_speaker_id_engine_get_opt_pnt(void* sm, short* opt_cnt);
 /**
  * @brief Adds a user and its model to engine so that engine can verify the
  * user in a audio recording. This API is to be used after device reboot when we
@@ -179,7 +199,7 @@ int syntiant_st_speaker_id_engine_train_user(void* spkr_id_engine, unsigned int 
  */
 int syntiant_st_speaker_id_engine_identify_user(void* spkr_id_engine, unsigned int length_recording,
                                                 short* audio_recording, unsigned int* user_id_out,
-                                                int* confidence_score_out);
+                                                int* confidence_score_out, uint8_t snr_val);
 
 #ifdef __cplusplus
 }

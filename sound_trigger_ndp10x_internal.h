@@ -26,22 +26,23 @@
 #define ENABLE_SPEAKER_ID_SUPPORT
 
 // TODO : Get these settings from SoundModel
-#define ACTIVATION_RECORD_TIME_MS 1500
+#define ACTIVATION_RECORD_TIME_MS 2100
 #define ACTIVATION_RECORD_NUM_SAMPLES (ACTIVATION_RECORD_TIME_MS * 16000 / 1000)
 
+#define STHAL_TANK_SIZE 84000
+
 /*
- * below uuid is got from below link at 06/20/2019
- * http://www.itu.int/ITU-T/asn1/uuid.html
- * 84c8645b-0bca-4500-a4ef-265f5d21dc72
+ * below uuid is a version 5 UUID encoding of syntiant.com
+ * uuid.uuid5(uuid.NAMESPACE_DNS, 'syntiant.com')
+ * UUID('dfa97af5-6b9b-5416-b6b0-4aa37b12918c')
  */
 #define SYNTIANT_STHAL_UUID               \
   {                                       \
-    0x84c8645b, 0x0bca, 0x4500, 0xa4ef, { \
-      0x26, 0x5f, 0x5d, 0x21, 0xdc, 0x72  \
+    0xdfa97af5, 0x6b9b, 0x5416, 0xb6b0, { \
+      0x4a, 0xa3, 0x7b, 0x12, 0x91, 0xc8  \
     }                                     \
   } /* uuid */
 
-#define SYNTIANT_SPEAKER_ID_WW_LEN 19200
 #define SYNTIANT_SPEAKER_ID_MAX_USERS 1
 
 enum syntiant_ndp10x_stdev_mode {

@@ -27,7 +27,7 @@
 extern "C" {
 #endif
 
-#define ENROLLMENT_MAX_AUDIO_DATA_SIZE (2 * 16000 * sizeof(short))
+#define ENROLLMENT_MAX_AUDIO_DATA_SIZE (3 * 16000 * sizeof(short))
 
 struct syntiant_st_sound_model_enrollment_recording_s {
   audio_config_t audio_config;
@@ -63,7 +63,7 @@ int syntiant_st_sound_model_get_enrollment_recording_requirements(
 /* Compatibility layer for KaiOS initial implementation */
 
 #define SYNTIANT_SPEAKER_ID_NUM_ENROLLMENT_SAMPLES 5
-#define SYNTIANT_SPEAKER_ID_WW_LEN 19200
+#define SYNTIANT_SPEAKER_ID_WW_LEN 33600
 
 enum syntiant_error_type_e { SYNTIANT_ERROR_NONE = 0, SYNTIANT_ERROR_FAIL = 1 };
 

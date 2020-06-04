@@ -74,10 +74,10 @@ int ndp10x_hal_flush_results(ndp10x_handle_t handle);
 int ndp10x_hal_get_num_phrases(ndp10x_handle_t handle, int* num_phrases);
 
 int ndp10x_hal_wait_for_match(ndp10x_handle_t handle, int keyphrase_id, int extract_match_mode,
-                              int extract_before_match);
+                              int extract_before_match, unsigned int *info);
 
 int ndp10x_hal_wait_for_match_and_extract(ndp10x_handle_t handle, int keyphrase_id, short* samples,
-                                          size_t num_samples);
+                                          size_t num_samples, unsigned int *info);
 
 int ndp10x_hal_set_tank_size(ndp10x_handle_t handle, unsigned int tank_size);
 
