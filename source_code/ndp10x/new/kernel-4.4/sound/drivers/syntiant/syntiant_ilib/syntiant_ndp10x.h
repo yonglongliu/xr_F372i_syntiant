@@ -44,6 +44,7 @@ enum syntiant_ndp10x_constants_e {
     /** maximum number of frequency domain bins */
 };
 
+
 /**
  * @brief DNN input sources
  */
@@ -592,6 +593,8 @@ extern int syntiant_ndp10x_debug_extract(struct syntiant_ndp_device_s *ndp,
                                          int type, void *data,
                                          unsigned int *len);
 
+extern int syntiant_ndp10x_reset_fix(struct syntiant_ndp_device_s *ndp);
+    
 #ifdef __cplusplus
 }
 #endif

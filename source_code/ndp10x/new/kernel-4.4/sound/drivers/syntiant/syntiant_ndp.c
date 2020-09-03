@@ -20,9 +20,6 @@
 #include <syntiant_ilib/syntiant_ndp_driver.h>
 #include <syntiant_ilib/syntiant_ndp_error.h>
 
-struct syntiant_ndp_driver_s *drivers[]
-    = { &syntiant_ndp10x_driver, NULL };
-
 char *
 syntiant_ndp_ilib_version(void) {
     static char *version = SYNTIANT_NDP_ILIB_VERSION;
@@ -38,6 +35,7 @@ syntiant_ndp_init(struct syntiant_ndp_device_s **ndpp,
     int s, s0, i, j;
     struct syntiant_ndp_device_s *ndp = *ndpp;
     int alloced = !ndp;
+    struct syntiant_ndp_driver_s* drivers[2] = {NULL, NULL};
 
     if (!ndp) {
         ndp = (iif->malloc)(sizeof(struct syntiant_ndp_device_s));
@@ -48,7 +46,9 @@ syntiant_ndp_init(struct syntiant_ndp_device_s **ndpp,
         /* ndpp may be used by the client during a restart init */
         *ndpp = ndp;
     }
-    
+
+    drivers[0] = syntiant_ndp_get_driver();
+
     ndp->init = 0;
 
     if (iif) {

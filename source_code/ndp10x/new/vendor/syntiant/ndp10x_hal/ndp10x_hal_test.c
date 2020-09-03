@@ -287,7 +287,7 @@ void show_usage() {
 int main(int argc, char** args) {
   setbuf(stdout, NULL);
   setbuf(stderr, NULL);
-  char* packages = "/vendor/firmware/hellojio_203_jio_mehfil_ndp10x-b0-kw_v34.synpkg";
+  char* packages = "/vendor/firmware/hellojio_217.1_jio_phone_f372i_ndp10x-b0-kw_v42.synpkg";
   int c = 0;
 
   // if (argc < 2)

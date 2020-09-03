@@ -57,6 +57,7 @@ struct syntiant_speaker_id_s {
   // int *user_model_bin;
   size_t ww_len;
   size_t enrolled_users;
+  int enrolled_user_ids[SYNTIANT_SPEAKER_ID_MAX_USERS];
 };
 
 struct syntiant_ndp10x_stdev {

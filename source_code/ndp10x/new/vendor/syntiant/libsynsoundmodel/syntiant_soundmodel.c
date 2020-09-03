@@ -16,9 +16,6 @@
 
 #define LOG_TAG "syntiant_sound_model"
 
-#define LOG_NDEBUG 0
-#define LOG_NDDEBUG 0
-
 #include <cutils/log.h>
 #include <errno.h>
 #include <hardware/hardware.h>
@@ -33,7 +30,9 @@
 #include "syntiant_st_speaker_id.h"
 
 #include <syngup.h>
+#include <arpa/inet.h>
 #include <uuid/uuid.h>
+#include <dlfcn.h>
 
 #define ARRAY_SIZE(a) (sizeof(a) / sizeof((a)[0]))
 
@@ -61,6 +60,15 @@
 #endif
 
 #include "syntiant_defs.h"
+
+struct speaker_id_lib_if_s {
+  void* lib;
+  int (*syntiant_st_speaker_id_engine_init)(unsigned int, unsigned int, short, short, void**, int*);
+  int (*syntiant_st_speaker_id_engine_uninit)(void*);
+  int (*syntiant_st_speaker_id_engine_train_user)(void*, unsigned int, unsigned int, unsigned int,
+                                                  short**);
+  int (*syntiant_st_speaker_id_engine_get_user_model)(void*, unsigned int, unsigned int, void*);
+} speaker_id_if = { NULL };
 
 ssize_t syntiant_st_sound_model_get_size_from_binary_sound_model(uint8_t* binary_sound_model_data,
                                                                  size_t binary_sound_model_size)
@@ -123,7 +131,7 @@ int syntiant_st_sound_model_build_from_binary_sound_model(uint8_t* binary_sound_
     if ((user_pkg->size > 0) && (user_pkg->size < 2*binary_sound_model_size)) {
       mdata = user_pkg->mdata;
     } else {
-      ALOGV("%s : Bogus user package size found\n", __func__);
+      ALOGW("%s : Bogus user package size found\n", __func__);
     }
   }
 
@@ -131,6 +139,9 @@ int syntiant_st_sound_model_build_from_binary_sound_model(uint8_t* binary_sound_
       (struct sound_trigger_phrase_sound_model*)(dest_memory);
 
   memcpy(&phraseSoundModel->common.uuid, mdata->model_uuid, sizeof(phraseSoundModel->common.uuid));
+  phraseSoundModel->common.uuid.timeLow = ntohl(phraseSoundModel->common.uuid.timeLow);
+  phraseSoundModel->common.uuid.timeMid = ntohs(phraseSoundModel->common.uuid.timeMid);
+  phraseSoundModel->common.uuid.timeHiAndVersion = ntohs(phraseSoundModel->common.uuid.timeHiAndVersion);
   memcpy(&phraseSoundModel->common.vendor_uuid, mdata->vendor_uuid,
          sizeof(phraseSoundModel->common.vendor_uuid));
   phraseSoundModel->common.data_size = binary_sound_model_size;
@@ -169,6 +180,69 @@ int syntiant_st_sound_model_build_from_binary_sound_model(uint8_t* binary_sound_
   return rc;
 }
 
+int syntiant_speaker_id_if_init(void)
+{
+  #define SPKRID_LIB_PATH_1 "/vendor/lib/libmeeami_spkrid.so"
+  #define SPKRID_LIB_PATH_2 "/system/vendor/lib/libmeeami_spkrid.so"
+
+  speaker_id_if.lib = dlopen(SPKRID_LIB_PATH_1, RTLD_NOW);
+  if (speaker_id_if.lib == NULL) {
+    speaker_id_if.lib = dlopen(SPKRID_LIB_PATH_2, RTLD_NOW);
+    if (speaker_id_if.lib == NULL) {
+      ALOGE("%s: DLOPEN failed for speaker ID library - %s\n"  , __func__,
+            dlerror());
+      return -ENOENT;
+    }
+  }
+
+  speaker_id_if.syntiant_st_speaker_id_engine_init =
+      dlsym(speaker_id_if.lib, "syntiant_st_speaker_id_engine_init");
+  if (!speaker_id_if.syntiant_st_speaker_id_engine_init) {
+    ALOGE("%s: DLOPEN error locating syntiant_st_speaker_id_engine_init function"
+          " -  %s\n", __func__, dlerror());
+    return -EINVAL;
+  }
+
+  speaker_id_if.syntiant_st_speaker_id_engine_uninit =
+      dlsym(speaker_id_if.lib, "syntiant_st_speaker_id_engine_uninit");
+  if (!speaker_id_if.syntiant_st_speaker_id_engine_uninit) {
+    ALOGE("%s: DLOPEN error locating syntiant_st_speaker_id_engine_uninit function"
+          " -  %s\n", __func__, dlerror());
+    return -EINVAL;
+  }
+
+  speaker_id_if.syntiant_st_speaker_id_engine_train_user =
+      dlsym(speaker_id_if.lib, "syntiant_st_speaker_id_engine_train_user");
+  if (!speaker_id_if.syntiant_st_speaker_id_engine_train_user) {
+    ALOGE("%s: DLOPEN error locating syntiant_st_speaker_id_engine_train_user function"
+          " -  %s\n", __func__, dlerror());
+    return -EINVAL;
+  }
+
+  speaker_id_if.syntiant_st_speaker_id_engine_get_user_model =
+      dlsym(speaker_id_if.lib, "syntiant_st_speaker_id_engine_get_user_model");
+  if (!speaker_id_if.syntiant_st_speaker_id_engine_get_user_model) {
+    ALOGE("%s: DLOPEN error locating syntiant_st_speaker_id_engine_get_user_model function"
+          " -  %s\n", __func__, dlerror());
+    return -EINVAL;
+  }
+
+  return 0;
+}
+
+void syntiant_speaker_id_if_uninit(void)
+{
+  int rv;
+  if (speaker_id_if.lib) {
+    rv = dlclose(speaker_id_if.lib);
+    if (rv) {
+      ALOGE("%s: DLCLOSE failed for speaker ID library - rv=%d (%s)\n"  , __func__,
+            rv, dlerror());
+    }
+  }
+  speaker_id_if.lib = NULL;
+}
+
 ssize_t syntiant_st_sound_model_get_size_when_extended(
     struct sound_trigger_phrase_sound_model* phrase_sound_model) {
   ssize_t s = 0;
@@ -178,18 +252,26 @@ ssize_t syntiant_st_sound_model_get_size_when_extended(
   uint8_t* buffer;
   uint32_t buffer_size, mdata_size;
   struct syngup_package package;
+  int s0;
 
   if (!phrase_sound_model) {
     return -EINVAL;
   }
+  
+  s0 = syntiant_speaker_id_if_init();
+  if (s0) {
+    ALOGE("%s : Error loading speaker ID library %d\n", __func__, s0);
+    s = -EINVAL;
+    goto exit;
+  }
 
-  STDOUT_WRAP_CALL(s = syntiant_st_speaker_id_engine_init(1, SYNTIANT_SPEAKER_ID_WW_LEN,
+  STDOUT_WRAP_CALL(s0 = speaker_id_if.syntiant_st_speaker_id_engine_init(1, SYNTIANT_SPEAKER_ID_WW_LEN,
                                                           SYNTIANT_SPEAKER_ID_DEFAULT_OPT_CNT,
                                                           SYNTIANT_SPEAKER_ID_DEFAULT_UTTER_CNT,
                                                           (void**)&spkr_id_engine, &model_size));
 
-  if (s != SYNTIANT_ST_SPEAKER_ID_ERROR_NONE) {
-    ALOGE("%s : Error initializing speaker ID library %d", __func__, s);
+  if (s0 != SYNTIANT_ST_SPEAKER_ID_ERROR_NONE) {
+    ALOGE("%s : Error initializing speaker ID library %d", __func__, s0);
     s = -EINVAL;
     goto exit;
   }
@@ -198,7 +280,7 @@ ssize_t syntiant_st_sound_model_get_size_when_extended(
   ALOGV("%s Extract blobs from syngup\n", __func__);
   ret = syngup_extract_blobs(&package, buffer, phrase_sound_model->common.data_size);
   if (ret) {
-    ALOGV("Could not extract blobs from syngup: %d\n", ret);
+    ALOGE("Could not extract blobs from syngup: %d\n", ret);
     goto exit;
   }
 
@@ -212,11 +294,13 @@ ssize_t syntiant_st_sound_model_get_size_when_extended(
 
   s = sizeof(struct sound_trigger_phrase_sound_model) + s;
 
+exit:
   if (spkr_id_engine) {
-    STDOUT_WRAP_CALL(syntiant_st_speaker_id_engine_uninit(spkr_id_engine));
+    STDOUT_WRAP_CALL(speaker_id_if.syntiant_st_speaker_id_engine_uninit(spkr_id_engine));
   }
 
-exit:
+  syntiant_speaker_id_if_uninit();
+
   return s;
 }
 
@@ -291,9 +375,15 @@ int syntiant_st_sound_model_extend(
     memcpy(recording_audio[i], recordings[i].audio_data,
            SYNTIANT_SPEAKER_ID_WW_LEN * sizeof(short));
   }
+  s = syntiant_speaker_id_if_init();
+  if (s) {
+    ALOGE("%s : Error loading speaker ID library %d\n", __func__, s);
+    s = -EINVAL;
+    goto out;
+  }
 
   ALOGV("%s: Init speaker id engine\n", __func__);
-  STDOUT_WRAP_CALL(s = syntiant_st_speaker_id_engine_init(1, SYNTIANT_SPEAKER_ID_WW_LEN,
+  STDOUT_WRAP_CALL(s = speaker_id_if.syntiant_st_speaker_id_engine_init(1, SYNTIANT_SPEAKER_ID_WW_LEN,
                                                           SYNTIANT_SPEAKER_ID_DEFAULT_OPT_CNT,
                                                           SYNTIANT_SPEAKER_ID_DEFAULT_UTTER_CNT,
                                                           (void**)&spkr_id_engine, &model_size));
@@ -305,7 +395,7 @@ int syntiant_st_sound_model_extend(
   }
 
   ALOGV("%s : training user model - user id %d, size:%u\n", __func__, user_id, model_size);
-  STDOUT_WRAP_CALL(s = syntiant_st_speaker_id_engine_train_user(
+  STDOUT_WRAP_CALL(s = speaker_id_if.syntiant_st_speaker_id_engine_train_user(
                        spkr_id_engine, user_id, SYNTIANT_SPEAKER_ID_DEFAULT_UTTER_CNT,
                        SYNTIANT_SPEAKER_ID_WW_LEN, recording_audio));
   ALOGV("%s : Done training user model", __func__);
@@ -337,17 +427,17 @@ int syntiant_st_sound_model_extend(
     goto out;
   }
 
-  STDOUT_WRAP_CALL(s = syntiant_st_speaker_id_engine_get_user_model(
+  STDOUT_WRAP_CALL(s = speaker_id_if.syntiant_st_speaker_id_engine_get_user_model(
                        spkr_id_engine, user_id, model_size, spkr_id_user_model));
   if (s != SYNTIANT_ST_SPEAKER_ID_ERROR_NONE) {
-    ALOGV("%s : Error obtaining trained model err = %d", __func__, s);
+    ALOGE("%s : Error obtaining trained model err = %d", __func__, s);
     s = -EINVAL;
     goto out;
   }
 
   s = syngup_extract_blobs(&package, buffer, source_sm->common.data_size);
   if (s) {
-    ALOGV("%s : Could not extract blobs from synpkg\n", __func__);
+    ALOGE("%s : Could not extract blobs from synpkg\n", __func__);
     goto out;
   }
 
@@ -365,7 +455,7 @@ int syntiant_st_sound_model_extend(
   /* Add the metadata to the model */
   mdata = malloc(sizeof(*mdata) + sizeof(*ph));
   if (!mdata) {
-    ALOGV("%s : Can not allocate memory for speaker id metadata", __func__);
+    ALOGE("%s : Can not allocate memory for speaker id metadata", __func__);
     s = -ENOMEM;
     goto out2;
   }
@@ -393,7 +483,7 @@ int syntiant_st_sound_model_extend(
   s = syngup_add_component(&package, spkr_id_user_model, model_size, (uint8_t*)mdata,
                            sizeof(*mdata) + sizeof(*ph));
   if (s) {
-    ALOGV("%s : Failed to add speaker id model to syngup (%d)", __func__, s);
+    ALOGE("%s : Failed to add speaker id model to syngup (%d)", __func__, s);
     goto out2;
   }
   ALOGV("%s : pack the blobs now", __func__);
@@ -416,8 +506,9 @@ out:
     free(mdata);
   }
   if (spkr_id_engine) {
-    STDOUT_WRAP_CALL(syntiant_st_speaker_id_engine_uninit(spkr_id_engine));
+    STDOUT_WRAP_CALL(speaker_id_if.syntiant_st_speaker_id_engine_uninit(spkr_id_engine));
   }
+  syntiant_speaker_id_if_uninit();
   if (spkr_id_user_model) {
     free(spkr_id_user_model);
   }
@@ -441,8 +532,8 @@ int ExtendSoundModel_Samples(struct sound_trigger_phrase_sound_model* model,
   ALOGV("%s : enter", __func__);
 
   if (!dest_model) {
-    ALOGV("%s : Error, dest_model is NULL", __func__);
-    ALOGV("%s : exit", __func__);
+    ALOGE("%s : Error, dest_model is NULL", __func__);
+    ALOGE("%s : exit", __func__);
     return SYNTIANT_ERROR_FAIL;
   }
 
@@ -452,8 +543,8 @@ int ExtendSoundModel_Samples(struct sound_trigger_phrase_sound_model* model,
 
   dest_buffer = (uint8_t*)malloc(model_size);
   if (!dest_buffer) {
-    ALOGE("%s : Could not allocate memory for buffer", __func__);
-    return -ENOMEM;
+    ALOGE("%s : Could not allocate %d bytes of memory for buffer", __func__, model_size);
+    return SYNTIANT_ERROR_FAIL;
   }
   memset(dest_buffer, 0, model_size);
 
@@ -483,7 +574,7 @@ int ExtendSoundModel_Samples(struct sound_trigger_phrase_sound_model* model,
 
   free(dest_buffer);
 
-  ALOGV("%s: exit", __func__);
+  ALOGV("%s: exit res=%d", __func__, res);
 
   return res;
 }
@@ -494,7 +585,7 @@ int ExtendSoundModel(struct sound_trigger_phrase_sound_model* model,
   int i;
   FILE* enrollfp = NULL;
   int n;
-  int ret_val = 0;
+  int ret_val = SYNTIANT_ERROR_NONE;
   short int* ipbuf[SYNTIANT_SPEAKER_ID_NUM_ENROLLMENT_SAMPLES] = { NULL };
   ALOGV("%s : enter", __func__);
 
@@ -541,7 +632,7 @@ out:
     }
   }
 
-  ALOGV("%s : exit", __func__);
+  ALOGV("%s : exit - ret_val=%d", __func__, ret_val);
   return ret_val;
 }
 

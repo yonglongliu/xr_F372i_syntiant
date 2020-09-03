@@ -22,6 +22,9 @@ extern "C" {
 
 #include <syntiant_ilib/syntiant_portability.h>
 #include <syntiant_packager/syntiant_package_consts.h>
+#ifdef CHIP_TYPE_NDP120
+#include <syntiant-dsp-firmware/ndp120_dsp_fw_state.h>
+#endif
 
 /**
  * @brief General TLV structure
@@ -39,14 +42,14 @@ typedef struct tlv_ {
  * @param len len of array
  * @return uint32_t CRC32 value
  */
-extern uint32_t crc32_no_lib(uint8_t *bytes, int len);
+uint32_t crc32_no_lib(uint8_t *bytes, size_t len);
 
 /**
  * @brief get Intial CRC32 value
  *
  * @return uint32_t intermediate CRC32 value
  */
-extern uint32_t crc32_no_lib_init(void);
+uint32_t crc32_no_lib_init(void);
 
 /**
  * @brief update the CRC32 using given bytes
@@ -56,7 +59,7 @@ extern uint32_t crc32_no_lib_init(void);
  * @param len length of array
  * @return uint32_t intermediate CRC32 value
  */
-extern uint32_t crc32_no_lib_update(unsigned int crc, uint8_t *bytes, int len);
+uint32_t crc32_no_lib_update(unsigned int crc, uint8_t *bytes, size_t len);
 
 /**
  * @brief finalize the CRC32 value
@@ -64,7 +67,7 @@ extern uint32_t crc32_no_lib_update(unsigned int crc, uint8_t *bytes, int len);
  * @param crc intermediate CRC32 value
  * @return uint32_t final CRC32 value
  */
-extern uint32_t crc32_no_lib_finalize(uint32_t crc);
+uint32_t crc32_no_lib_finalize(uint32_t crc);
 
 #if defined(WINDOWS_KERNEL) || defined(_MSC_VER) || defined(__MINGW32__)
 #pragma pack(push)
@@ -242,9 +245,93 @@ typedef struct syntiant_ph_params_t_{
     uint32_t pharg;
     uint32_t phqueuesize;
 } syntiant_ph_params_t;
-SYNTIANT_CASSERT(sizeof(syntiant_ph_params_metadata_t)
-                 == PH_PARAMS_METADATA_v2_SIZE,
-                 "Unexpected size for syntiant_ph_params_metadata_t") 
+SYNTIANT_CASSERT(sizeof(syntiant_ph_params_t)
+                 == PH_PARAMS_SIZE,
+                 "Unexpected size for syntiant_ph_params_t") 
+
+/**
+ * @brief Posterior handler collection parameters used for parsing.
+ */
+typedef struct syntiant_ph_collection_params_t_{
+    struct {
+        uint32_t num_ph; /* add gree space to the struct for the future */
+    } collection;
+    struct {
+        uint32_t num_classes;
+        uint32_t num_states;
+        uint32_t ph_type;
+    } ph;
+    struct {
+        uint32_t timeout;
+        uint32_t timeout_action;
+        uint32_t timeout_action_arg0;
+        uint32_t timeout_action_arg1;
+    } state;
+    struct {
+        uint32_t window;
+        uint32_t threshold;
+        uint32_t backoff;
+        uint32_t queuesize;
+        uint32_t action;
+        uint32_t action_arg0;
+        uint32_t action_arg1;
+    } class_;
+    struct {
+        uint32_t cur_ph;
+        uint32_t cur_state;
+        uint32_t cur_class;
+        uint32_t parsing;
+        uint32_t parsed;
+    } parser;
+} syntiant_ph_collection_params_t;
+SYNTIANT_CASSERT(sizeof(syntiant_ph_collection_params_t)
+                  == PH_COLLECTION_PARAMS_SIZE,
+                 "Unexpected size for syntiant_ph_collection_params_t")
+
+/**
+ * @brief Neural network metadata parameters used for parsing.
+ */
+typedef struct syntiant_nn_metadata_v1_t_{
+    uint32_t nn_num;
+    struct {
+        uint32_t num_layers;
+        uint32_t is_nn_cached;
+        uint32_t nn_input_isa_idx;
+        uint32_t nn_output_isa_idx;
+        uint32_t nn_input_layer_type;
+    } base_meta;
+    struct {
+        uint32_t x;
+        uint32_t y;
+        uint32_t z;
+    } inp_size;
+    struct {
+        uint32_t input_coord;
+        uint32_t output_coord;
+    } coords;
+    struct {
+        uint32_t input_base_coord_max;
+        uint32_t output_base_coord_max;
+        uint32_t input_base_coord_add;
+        uint16_t input_offset_add;
+        uint16_t input_offset_max;
+        uint16_t output_base_coord_add;
+        uint16_t output_base_coord_stride;
+    } cache_params;
+    struct {
+        uint32_t cur_nn;
+        uint32_t cur_layer;
+        uint32_t parsing;
+        uint32_t parsed;
+    } parser;
+} syntiant_nn_metadata_v1_t;
+SYNTIANT_CASSERT(sizeof(syntiant_nn_metadata_v1_t)
+                  == NN_METADATA_V1_SIZE,
+                 "Unexpected size for syntiant_nn_metadata_v1_t")
+
+typedef union syntiant_nn_metadata_t_{
+    syntiant_nn_metadata_v1_t v1;
+} syntiant_nn_metadata_t;
 
 /**
  * @brief hw parameters
@@ -403,10 +490,13 @@ typedef union syntiant_board_params_t_{
  */
 typedef union syntiant_pkg_parser_data_t_{
     syntiant_ph_params_t ph_params;
+    syntiant_ph_collection_params_t phc_params;
     syntiant_fc_params_t fc_params;
     syntiant_hw_params_v2_t hw_params;
     syntiant_board_params_t board_params;
+    syntiant_nn_metadata_t nn_metadata;
     uint8_t fw_version[VERSION_MAX_SIZE];
+    uint8_t dsp_fw_version[VERSION_MAX_SIZE];
     uint8_t params_version[VERSION_MAX_SIZE];
     uint8_t pkg_version[VERSION_MAX_SIZE];
     uint8_t labels[PARSER_SCRATCH_SIZE];
@@ -468,6 +558,7 @@ typedef struct syntiant_pkg_parser_state_t_ {
     uint8_t tag[TAG_SIZE];
     uint8_t length[LENGTH_SIZE];
     uint8_t exp_crc[CRC_SIZE];
+    uint8_t is_multisegment;
     uint8_t is_current_fw_package;
     uint8_t is_current_params_package;
     uint8_t is_current_dsp_fw_package;
@@ -588,6 +679,25 @@ extern int syntiant_pkg_parse_checksum_value(syntiant_pkg_parser_state_t
  */
 extern int syntiant_pkg_parse_posterior_params(syntiant_pkg_parser_state_t
                                                *pstate, int collect_log);
+
+
+/**
+ * @parse neural network metadata value
+ *
+ * @param[in] pstate parser status
+ * @return error code
+ */
+extern int syntiant_pkg_parse_nn_metadata(syntiant_pkg_parser_state_t *pstate);
+
+
+/**
+ * @parse mcu orchestrator nodes params
+ *
+ * @param[in] pstate parser status
+ * @return error code
+ */
+extern int syntiant_pkg_parse_mcu_orchestrator(syntiant_pkg_parser_state_t
+                                               *pstate);
 
 
 /**

@@ -244,10 +244,10 @@ PRODUCT_PACKAGES += sthal_fwk_test
 #ndp10x test demo file
 NDP10XDIR := vendor/syntiant/firmware/
 PRODUCT_COPY_FILES += \
-  $(NDP10XDIR)/hellojio_217.1_jio_phone_f372i_ndp10x-b0-kw_v41.syngup:/system/vendor/firmware/hellojio_217.1_jio_phone_f372i_ndp10x-b0-kw_v41.syngup \
+  $(NDP10XDIR)/hellojio_217.1_jio_phone_f372i_ndp10x-b0-kw_v42.syngup:/system/vendor/firmware/hellojio_217.1_jio_phone_f372i_ndp10x-b0-kw_v42.syngup \
   $(NDP10XDIR)/hellojio_217.1.synpkg:/system/vendor/firmware/hellojio_217.1.synpkg \
-  $(NDP10XDIR)/hellojio_217.1_jio_phone_f372i_ndp10x-b0-kw_v41.synpkg:/system/vendor/firmware/hellojio_217.1_jio_phone_f372i_ndp10x-b0-kw_v41.synpkg \
-  $(NDP10XDIR)/hellojio_217.1_jio_phone_f372i_ndp10x-b0-kw_v41.synpkg:/system/vendor/firmware/hellojio_jio_phone_f372i_ndp10x.synpkg \
-  $(NDP10XDIR)/ndp10x-b0-kw_v41.synpkg:/system/vendor/firmware/ndp10x-b0-kw_v41.synpkg \
+  $(NDP10XDIR)/hellojio_217.1_jio_phone_f372i_ndp10x-b0-kw_v42.synpkg:/system/vendor/firmware/hellojio_217.1_jio_phone_f372i_ndp10x-b0-kw_v42.synpkg \
+  $(NDP10XDIR)/hellojio_217.1_jio_phone_f372i_ndp10x-b0-kw_v42.synpkg:/system/vendor/firmware/hellojio_jio_phone_f372i_ndp10x.synpkg \
+  $(NDP10XDIR)/ndp10x-b0-kw_v42.synpkg:/system/vendor/firmware/ndp10x-b0-kw_v42.synpkg \
   $(NDP10XDIR)/pcm_audio0.raw:/system/vendor/firmware/pcm_audio0.raw
 

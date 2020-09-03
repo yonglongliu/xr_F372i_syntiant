@@ -42,7 +42,7 @@ ssize_t syntiant_st_sound_model_get_size_from_binary_sound_model(uint8_t* binary
  * binary_sound_model_data: buffer containing file data
  * binary_sound_model_size: size of the buffer
  * dest_buffer: sound model from parsed file copied to caller supplied buffer
-*/
+ */
 int syntiant_st_sound_model_build_from_binary_sound_model(uint8_t* binary_sound_model_data,
                                                           uint32_t binary_sound_model_size,
                                                           uint8_t* buffer);

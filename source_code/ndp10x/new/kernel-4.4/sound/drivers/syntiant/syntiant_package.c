@@ -63,7 +63,8 @@ syntiant_pkg_read_chunk_data(syntiant_pkg_parser_state_t *pstate,
 {
     uint8_t* ptr = pstate->ptr;
     uint8_t* end = pstate->open_ram_end;
-    unsigned int available_bytes, bytes_to_copy;
+    uint32_t available_bytes;
+    uint32_t bytes_to_copy;
 
     available_bytes = (unsigned int) (end - ptr);
 
@@ -88,7 +89,7 @@ syntiant_pkg_read_chunk_data(syntiant_pkg_parser_state_t *pstate,
     /* First do the crc to avoid changing data in case of encrypted data*/
     if (calc_crc) {
         pstate->calc_crc =
-            crc32_no_lib_update(pstate->calc_crc, ptr, (int) bytes_to_copy);
+            crc32_no_lib_update(pstate->calc_crc, ptr, bytes_to_copy);
     }
 
     if (!fake) {
@@ -117,6 +118,9 @@ syntiant_pkg_read_tag(
     
     syntiant_pkg_read_chunk_data(pstate,
                      pstate->tag, 4, 0, 1, 1);
+
+    pstate->is_multisegment = (uint8_t)((*(uint32_t*)pstate->tag & TAG_MULTI_SEGMENT_BIT) ? 1 : 0);
+    *(uint32_t*)pstate->tag = *(uint32_t*)pstate->tag & (TAG_MULTI_SEGMENT_BIT - 1);
 
     if (pstate->expected_bytes == 0) {
         pstate->mode = PACKAGE_MODE_LENGTH_START;
@@ -180,7 +184,7 @@ int
 syntiant_pkg_parse_header_value(syntiant_pkg_parser_state_t *pstate){
     int s = SYNTIANT_PACKAGE_ERROR_NONE;
 
-    int header_tlv_size = sizeof(pstate->tag)+ sizeof(pstate->length)+ 
+    size_t header_tlv_size = sizeof(pstate->tag)+ sizeof(pstate->length)+ 
                 sizeof(pstate->header_val);
         
     if (syntiant_pkg_check_header_tlv(pstate->ptr)){
@@ -214,6 +218,13 @@ syntiant_pkg_print_stored_params(syntiant_pkg_parser_state_t *pstate){
             pstate->data.fw_version[*(uint32_t*)pstate->length] = '\0';
             SYNTIANT_PRINTF("\n- Firmware version: %s\n", 
                 pstate->data.fw_version);
+            break;  
+
+        case TAG_DSP_FIRMWARE_VERSION_STRING_V1:
+            SYNTIANT_PRINTF("\n--------------------------\n");
+            pstate->data.dsp_fw_version[*(uint32_t*)pstate->length] = '\0';
+            SYNTIANT_PRINTF("\n- DSP FW version: %s\n", 
+            pstate->data.dsp_fw_version);
             break;  
 
         case TAG_NN_VERSION_STRING_V1:
@@ -430,6 +441,12 @@ syntiant_pkg_parse_stored_params(syntiant_pkg_parser_state_t *pstate,
                 goto error;
             }
             break;
+        case TAG_DSP_FIRMWARE_VERSION_STRING_V1:
+            if (*(uint32_t*) pstate->length > VERSION_MAX_SIZE){
+                s = SYNTIANT_PACKAGE_ERROR_FIRMWARE_VERSION_STRING_V2;
+                goto error;
+            }
+            break;
         case TAG_NN_VERSION_STRING_V1:
             if (*(uint32_t*) pstate->length > VERSION_MAX_SIZE){
                 s = SYNTIANT_PACKAGE_ERROR_NN_VERSION_STRING_V2;
@@ -490,6 +507,13 @@ syntiant_pkg_parse_stored_params(syntiant_pkg_parser_state_t *pstate,
             pstate->data.fw_version, *(uint32_t*) pstate->length, 0, 1, 1);
         pstate->partially_read_length += byte_read;
         pstate->is_current_fw_package = 1;
+        break;
+
+    case TAG_DSP_FIRMWARE_VERSION_STRING_V1:
+        byte_read += syntiant_pkg_read_chunk_data(pstate,
+            pstate->data.dsp_fw_version, *(uint32_t*) pstate->length, 0, 1, 1);  
+        pstate->partially_read_length += byte_read;
+        pstate->is_current_dsp_fw_package = 1;
         break;
 
     case TAG_NN_VERSION_STRING_V1:
@@ -618,32 +642,33 @@ syntiant_pkg_parse_partially_stored_params(syntiant_pkg_parser_state_t *pstate,
     int s = SYNTIANT_PACKAGE_ERROR_NONE;
     unsigned int byte_read = 0;
     unsigned int index = 0;
-    switch (*(uint32_t*)pstate->tag){
+    uint32_t tag = *(uint32_t*)pstate->tag;
 
-     case TAG_NN_LABELS_V1:
-        if (pstate->mode == PACKAGE_MODE_VALUE_START){
+    switch (tag){
+
+    case TAG_NN_LABELS_V1:
+    case TAG_NN_LABELS_V3:
+        if (pstate->mode == PACKAGE_MODE_VALUE_START) {
             /*sanity check on labels size*/
-            if (*(uint32_t*)pstate->length > LABELS_MAX_SIZE){
+            if (*(uint32_t *)pstate->length > LABELS_MAX_SIZE) {
                 s = SYNTIANT_PACKAGE_ERROR_NN_LABELS_V1;
                 goto error;
             }
-            pstate->metadata.labels_metadata = 
-            maximum(PARSER_SCRATCH_SIZE,*(uint32_t*)pstate->length); 
-            if (collect_log){
+            pstate->metadata.labels_metadata = maximum(PARSER_SCRATCH_SIZE, *(uint32_t *)pstate->length);
+            if (collect_log) {
                 SYNTIANT_PRINTF("\n--------------------------\n");
-                SYNTIANT_PRINTF("\n - Labels length: %u\n", 
-                    *(uint32_t*)pstate->length);   
-                SYNTIANT_PRINTF(" - Labels: "); 
+                SYNTIANT_PRINTF("\n - Labels length: %u\n", *(uint32_t *)pstate->length);
+                SYNTIANT_PRINTF(" - Labels: ");
             }
         }
-        byte_read = syntiant_pkg_read_chunk_data(pstate,
-            (uint8_t*)(&(pstate->data.labels)), 
-            pstate->metadata.labels_metadata, 0, 1, 1); 
+
+        byte_read = syntiant_pkg_read_chunk_data(pstate, (uint8_t*)(&(pstate->data.labels)), pstate->metadata.labels_metadata, 0, 1, 1); 
         pstate->partially_read_length += byte_read;
+
+        /* read complete */
         if (pstate->partially_read_length == *(uint32_t*)pstate->length){
             if(collect_log){
-                for (index = 0; index < pstate->metadata.labels_metadata ; 
-                    index++){
+                for (index = 0; index < pstate->metadata.labels_metadata ; index++){
                     if (pstate->data.labels[index] == '\0')
                         SYNTIANT_PRINTF("%c", ' ');
                     else
@@ -656,37 +681,49 @@ syntiant_pkg_parse_partially_stored_params(syntiant_pkg_parser_state_t *pstate,
                 s = SYNTIANT_PACKAGE_INCREMENTALLY_PARSING_ERROR;
                 goto error;
             }
-        }
-        else{ 
+        } else { /* partial read */
             if (pstate->expected_bytes){
                 pstate->mode = PACKAGE_MODE_VALUE_CONT;
                 pstate->value_mode = PACKAGE_MODE_NO_PARTIAL_VALUE;
-            }
-            else{
+            } else {
                 pstate->mode = PACKAGE_MODE_VALUE_CONT;
                 pstate->value_mode = PACKAGE_MODE_VALID_PARTIAL_VALUE;
+                if (tag == TAG_NN_LABELS_V3)
                 if(collect_log){
-                    for (index = 0; index < pstate->metadata.labels_metadata ; 
-                        index++){
+                    for (index = 0; index < pstate->metadata.labels_metadata; index++){
                         if (pstate->data.labels[index] == '\0')
                             SYNTIANT_PRINTF("%c", ' ');
                         else
                             SYNTIANT_PRINTF("%c", pstate->data.labels[index]);
                     } 
                 }
-                pstate->metadata.labels_metadata = 
-                maximum(PARSER_SCRATCH_SIZE,*(uint32_t*)pstate->length - 
-                pstate->partially_read_length);
+                pstate->metadata.labels_metadata = maximum(PARSER_SCRATCH_SIZE,*(uint32_t*)pstate->length - pstate->partially_read_length);
                 pstate->expected_bytes = pstate->metadata.labels_metadata;
-                
             }
         }
         break;
 
     case TAG_FIRMWARE:
+    case TAG_NDP120_DSP_FIRMWARE_V1:
+    case TAG_NDP120_DSP_ENCRYPTED_FIRMWARE_V1:
+    case TAG_NDP120_A0_FIRMWARE_V1:
+    case TAG_NDP120_A0_ENCRYPTED_FIRMWARE_V1:
+    case TAG_NDP120_NN_PARAMETERS_V1:
+    case TAG_NDP120_A0_NN_METADATA:
+    case TAG_NDP120_A0_DSP_FLOW_RULES_V1:
+    case TAG_NDP120_A0_DSP_FLOW_COLLECTION_V1:
+    case TAG_NDP120_A0_MCU_ORCHERSTARTOR_V1:
         if (pstate->mode == PACKAGE_MODE_VALUE_START){
+
             /*sanity check on fw size*/
-            if (*(uint32_t*)pstate->length > FW_MAX_SIZE){
+            if (*(uint32_t*)pstate->tag == TAG_NDP120_NN_PARAMETERS_V1) {
+                if (*(uint32_t*)pstate->length >  NN_MAX_SIZE){
+                    SYNTIANT_PRINTF("Tag too large: %d > %d\n", *(uint32_t*)pstate->length, NN_MAX_SIZE);
+                    s = SYNTIANT_PACKAGE_ERROR_FIRMWARE;
+                    goto error;
+                }
+            } else if (*(uint32_t*)pstate->length > FW_MAX_SIZE){
+                SYNTIANT_PRINTF("Tag too large: %d > %d\n", *(uint32_t*)pstate->length,FW_MAX_SIZE);
                 s = SYNTIANT_PACKAGE_ERROR_FIRMWARE;
                 goto error;
             }
@@ -806,6 +843,7 @@ syntiant_pkg_parse_posterior_params(syntiant_pkg_parser_state_t *pstate,
     int collect_log) {
     int s = SYNTIANT_PACKAGE_ERROR_NONE;
     unsigned int byte_read = 0;
+
     switch (*(uint32_t*)pstate->tag){
     
         case TAG_NN_PH_PARAMETERS_V4:
@@ -888,16 +926,16 @@ syntiant_pkg_parse_posterior_params(syntiant_pkg_parser_state_t *pstate,
 
                             SYNTIANT_PRINTF("\t \t \t - Win: %u, Th: %u, Bkoff: %u, SQ: %u\n",
                             pstate->data.ph_params.phwin, pstate->data.ph_params.phth,
-                            pstate->data.ph_params.phbackoff, 
-                            pstate->data.ph_params.phqueuesize);    
+                            pstate->data.ph_params.phbackoff,
+                            pstate->data.ph_params.phqueuesize);
                         }
                     }
                 }
 
                 /*read timeout for the next state*/
                 else{
-                    pstate->expected_bytes = 
-                        (pstate->expected_bytes > 0) ? pstate->expected_bytes: 
+                    pstate->expected_bytes =
+                        (pstate->expected_bytes > 0) ? pstate->expected_bytes:
                         sizeof(pstate->metadata.ph_metadata.v1.timeout);
 
                     byte_read = syntiant_pkg_read_chunk_data(pstate,
@@ -936,7 +974,7 @@ syntiant_pkg_parse_posterior_params(syntiant_pkg_parser_state_t *pstate,
                         pstate->metadata.ph_metadata.v1.num_classes &&
                     pstate->metadata.ph_metadata.v1.cur_state == 
                         pstate->metadata.ph_metadata.v1.num_states  
-                        )){            
+                        )){
                     s =  SYNTIANT_PACKAGE_ERROR_NN_PH_PARAMETERS_V4;
                         goto error;
                 }
@@ -1103,8 +1141,215 @@ syntiant_pkg_parse_posterior_params(syntiant_pkg_parser_state_t *pstate,
                 }
             }
             break;
+
+        case TAG_NN_PHP_COLLECTION_V1:
+            pstate->data.phc_params.parser.parsed =
+                pstate->data.phc_params.parser.parsing;
+
+            if (pstate->mode == PACKAGE_MODE_VALUE_START){
+                memset(&pstate->data.phc_params, 0,
+                    sizeof(pstate->data.phc_params));
+                pstate->data.phc_params.parser.parsing =
+                    PHC_PARSE_COLLECTION_PARAMS;
+                pstate->data.phc_params.parser.parsed = 0;
+
+            } else if (pstate->data.phc_params.parser.parsing ==
+                    PHC_PARSE_COLLECTION_PARAMS){
+                pstate->expected_bytes =
+                    sizeof(pstate->data.phc_params.collection);
+                byte_read = syntiant_pkg_read_chunk_data(pstate,
+                    (uint8_t*)(&(pstate->data.phc_params.collection)),
+                    sizeof(pstate->data.phc_params.collection), 0, 1, 1);
+                pstate->partially_read_length += byte_read;
+                pstate->data.phc_params.parser.cur_ph = 0;
+                pstate->data.phc_params.parser.parsing = PHC_PARSE_PH_PARAMS;
+
+                /* Need to have a least one set of ph params*/
+                if (!pstate->data.phc_params.collection.num_ph){
+                    s =  SYNTIANT_PACKAGE_ERROR_NN_PH_COLLECTION_V1;
+                    goto error;
+                }
+
+            } else if (pstate->data.phc_params.parser.parsing ==
+                        PHC_PARSE_PH_PARAMS){
+                pstate->expected_bytes = sizeof(pstate->data.phc_params.ph);
+                byte_read = syntiant_pkg_read_chunk_data(pstate,
+                    (uint8_t*)(&(pstate->data.phc_params.ph)),
+                    sizeof(pstate->data.phc_params.ph), 0, 1, 1);
+                pstate->partially_read_length += byte_read;
+                pstate->data.phc_params.parser.cur_state = 0;
+                pstate->data.phc_params.parser.cur_class = 0;
+                pstate->data.phc_params.parser.cur_ph += 1;
+                pstate->data.phc_params.parser.parsing = PHC_PARSE_STATE_PARAMS;
+
+                /* Need to have a least one state and class*/
+                if (!pstate->data.phc_params.ph.num_states ||
+                        !pstate->data.phc_params.ph.num_classes){
+                    s =  SYNTIANT_PACKAGE_ERROR_NN_PH_COLLECTION_V1;
+                    goto error;
+                }
+
+            } else if (pstate->data.phc_params.parser.parsing ==
+                        PHC_PARSE_STATE_PARAMS){
+                pstate->expected_bytes = sizeof(pstate->data.phc_params.state);
+                byte_read = syntiant_pkg_read_chunk_data(pstate,
+                    (uint8_t*)(&(pstate->data.phc_params.state)),
+                    sizeof(pstate->data.phc_params.state), 0, 1, 1);
+                pstate->partially_read_length += byte_read;
+                pstate->data.phc_params.parser.cur_state += 1;
+                pstate->data.phc_params.parser.cur_class = 0;
+                pstate->data.phc_params.parser.parsing = PHC_PARSE_CLASS_PARAMS;
+
+            } else if (pstate->data.phc_params.parser.parsing ==
+                        PHC_PARSE_CLASS_PARAMS){
+                pstate->expected_bytes = sizeof(pstate->data.phc_params.class_);
+                byte_read = syntiant_pkg_read_chunk_data(pstate,
+                    (uint8_t*)(&(pstate->data.phc_params.class_)),
+                    sizeof(pstate->data.phc_params.class_), 0, 1, 1);
+                pstate->partially_read_length += byte_read;
+                pstate->data.phc_params.parser.cur_class += 1;
+
+                /* all the states classes are done, check for more states*/
+                if (pstate->data.phc_params.parser.cur_class ==
+                     pstate->data.phc_params.ph.num_classes){
+                    /* all the ph states are doene, check for more ph*/
+                    if (pstate->data.phc_params.parser.cur_state ==
+                            pstate->data.phc_params.ph.num_states){
+                        pstate->data.phc_params.parser.parsing =
+                            PHC_PARSE_PH_PARAMS;
+                    } else {
+                        pstate->data.phc_params.parser.parsing =
+                            PHC_PARSE_STATE_PARAMS;
+                    }
+                } else {
+                    pstate->data.phc_params.parser.parsing =
+                        PHC_PARSE_CLASS_PARAMS;
+                }
+
+            } else {
+                s =  SYNTIANT_PACKAGE_ERROR_NN_PH_COLLECTION_V1;
+                goto error;
+            }
+
+            pstate->value_mode = PACKAGE_MODE_NO_PARTIAL_VALUE;
+            pstate->mode =
+                (pstate->partially_read_length < *(uint32_t*)pstate->length) ?
+                PACKAGE_MODE_VALUE_CONT : PACKAGE_MODE_TAG_START;
+            break;
     }
 
+error:
+    return s;
+}
+
+int
+syntiant_pkg_parse_nn_metadata(syntiant_pkg_parser_state_t *pstate)
+{
+    int s = SYNTIANT_PACKAGE_ERROR_NONE;
+    unsigned int byte_read = 0;
+
+    switch (*(uint32_t*)pstate->tag){
+        case TAG_NDP120_A0_NN_METADATA:
+            pstate->data.nn_metadata.v1.parser.parsed =
+                pstate->data.nn_metadata.v1.parser.parsing;
+
+            if (pstate->data.nn_metadata.v1.parser.parsing ==
+                    NNM_PARSE_NN_NUM){
+                pstate->expected_bytes =
+                    sizeof(pstate->data.nn_metadata.v1.nn_num);
+                byte_read = syntiant_pkg_read_chunk_data(pstate,
+                    (uint8_t*)(&(pstate->data.nn_metadata.v1.nn_num)),
+                    sizeof(pstate->data.nn_metadata.v1.nn_num), 0, 1, 1);
+                pstate->partially_read_length += byte_read;
+                pstate->data.nn_metadata.v1.parser.parsing = NNM_PARSE_BASE_META;
+
+                /* Need to have a least one set of metadata */
+                if (!pstate->data.nn_metadata.v1.nn_num){
+                    s =  SYNTIANT_PACKAGE_ERROR_NN_METADATA_V1;
+                    goto error;
+                }
+
+            } else if (pstate->data.nn_metadata.v1.parser.parsing ==
+                        NNM_PARSE_BASE_META){
+                pstate->expected_bytes =
+                    sizeof(pstate->data.nn_metadata.v1.base_meta);
+                byte_read = syntiant_pkg_read_chunk_data(pstate,
+                    (uint8_t*)(&(pstate->data.nn_metadata.v1.base_meta)),
+                    sizeof(pstate->data.nn_metadata.v1.base_meta), 0, 1, 1);
+                pstate->partially_read_length += byte_read;
+                pstate->data.nn_metadata.v1.parser.cur_nn += 1;
+                pstate->data.nn_metadata.v1.parser.cur_layer = 0;
+                pstate->data.nn_metadata.v1.parser.parsing = NNM_PARSE_INP_SIZE;
+
+            } else if (pstate->data.nn_metadata.v1.parser.parsing ==
+                        NNM_PARSE_INP_SIZE){
+                pstate->expected_bytes =
+                    sizeof(pstate->data.nn_metadata.v1.inp_size);
+                byte_read = syntiant_pkg_read_chunk_data(pstate,
+                    (uint8_t*)(&(pstate->data.nn_metadata.v1.inp_size)),
+                    sizeof(pstate->data.nn_metadata.v1.inp_size), 0, 1, 1);
+                pstate->partially_read_length += byte_read;
+                pstate->data.nn_metadata.v1.parser.parsing = NNM_PARSE_COORD;
+
+            } else if (pstate->data.nn_metadata.v1.parser.parsing ==
+                        NNM_PARSE_COORD){
+                pstate->expected_bytes =
+                    sizeof(pstate->data.nn_metadata.v1.coords);
+                byte_read = syntiant_pkg_read_chunk_data(pstate,
+                    (uint8_t*)(&(pstate->data.nn_metadata.v1.coords)),
+                    sizeof(pstate->data.nn_metadata.v1.coords), 0, 1, 1);
+                pstate->partially_read_length += byte_read;
+                pstate->data.nn_metadata.v1.parser.cur_layer += 1;
+
+                if (pstate->data.nn_metadata.v1.base_meta.is_nn_cached){
+                    pstate->data.nn_metadata.v1.parser.parsing =
+                        NNM_PARSE_CACHE_INST;
+                } else if (pstate->data.nn_metadata.v1.parser.cur_layer <
+                        pstate->data.nn_metadata.v1.base_meta.num_layers){
+                    pstate->data.nn_metadata.v1.parser.parsing =
+                        NNM_PARSE_COORD;
+                } else {
+
+                    pstate->data.nn_metadata.v1.parser.parsing =
+                        NNM_PARSE_BASE_META;
+                }
+
+            } else if (pstate->data.nn_metadata.v1.parser.parsing ==
+                        NNM_PARSE_CACHE_INST){
+                pstate->expected_bytes =
+                    sizeof(pstate->data.nn_metadata.v1.cache_params);
+                byte_read = syntiant_pkg_read_chunk_data(pstate,
+                    (uint8_t*)(&(pstate->data.nn_metadata.v1.cache_params)),
+                    sizeof(pstate->data.nn_metadata.v1.cache_params), 0, 1, 1);
+                pstate->partially_read_length += byte_read;
+
+                if (pstate->data.nn_metadata.v1.parser.cur_layer <
+                        pstate->data.nn_metadata.v1.base_meta.num_layers){
+                    pstate->data.nn_metadata.v1.parser.parsing =
+                        NNM_PARSE_COORD;
+                } else {
+                    pstate->data.nn_metadata.v1.parser.parsing =
+                        NNM_PARSE_BASE_META;
+                }
+
+            } else if (pstate->mode == PACKAGE_MODE_VALUE_START){
+                memset(&pstate->data.nn_metadata.v1, 0,
+                    sizeof(pstate->data.nn_metadata.v1));
+                pstate->data.nn_metadata.v1.parser.parsing = NNM_PARSE_NN_NUM;
+                pstate->data.nn_metadata.v1.parser.parsed = 0;
+
+            } else {
+                s =  SYNTIANT_PACKAGE_ERROR_NN_METADATA_V1;
+                goto error;
+            }
+
+            pstate->value_mode = PACKAGE_MODE_NO_PARTIAL_VALUE;
+            pstate->mode =
+                (pstate->partially_read_length < *(uint32_t*)pstate->length) ?
+                PACKAGE_MODE_VALUE_CONT : PACKAGE_MODE_TAG_START;
+
+            break;
+    }
 error:
     return s;
 }
@@ -1134,6 +1379,7 @@ syntiant_pkg_read_value(
         break;
 
     case TAG_FIRMWARE_VERSION_STRING_V1:
+    case TAG_DSP_FIRMWARE_VERSION_STRING_V1:
     case TAG_NN_VERSION_STRING_V1:
     /*case TAG_BOARD_CALIBRATION_PARAMS:*/
     case TAG_PACKAGE_VERSION_STRING:
@@ -1147,23 +1393,32 @@ syntiant_pkg_read_value(
         break;
 
     case TAG_NN_LABELS_V1:
+    case TAG_NN_LABELS_V3:
     case TAG_FIRMWARE:
+    case TAG_NDP120_DSP_FIRMWARE_V1:
+    case TAG_NDP120_DSP_ENCRYPTED_FIRMWARE_V1:
+    case TAG_NDP120_A0_ENCRYPTED_FIRMWARE_V1:
+    case TAG_NDP120_A0_FIRMWARE_V1:
     case TAG_NDP10X_NN_PARAMETERS_V3:
+    case TAG_NDP120_NN_PARAMETERS_V1:
+    case TAG_NDP120_A0_DSP_FLOW_RULES_V1:
+    case TAG_NDP120_A0_DSP_FLOW_COLLECTION_V1:
+    case TAG_NDP120_A0_MCU_ORCHERSTARTOR_V1:
         s = syntiant_pkg_parse_partially_stored_params(pstate, collect_log);
         break;
 
     case TAG_NN_PH_PARAMETERS_V4:
-        s = syntiant_pkg_parse_posterior_params(pstate, collect_log);
-        break;
-    
     case TAG_NN_PH_PARAMETERS_V5:
+    case TAG_NN_PHP_COLLECTION_V1:
         s = syntiant_pkg_parse_posterior_params(pstate, collect_log);
         break;
 
+    case TAG_NDP120_A0_NN_METADATA:
+        s = syntiant_pkg_parse_nn_metadata(pstate);
+        break;
 
-    /*unkonwn tags*/
+    /*unknown tags*/
     default:
-
         s = SYNTIANT_PACKAGE_ERROR_UNKNOWN_TLV;
         break;
     }
@@ -1184,17 +1439,23 @@ syntiant_pkg_parse_chunk(syntiant_pkg_parser_state_t *pstate, int collect_log){
         case PACKAGE_MODE_TAG_START:
         case PACKAGE_MODE_TAG_CONT:
             s = syntiant_pkg_read_tag(pstate);
-            if (s) goto error;
+            if (s) { 
+                goto error;
+            }
             break;
         case PACKAGE_MODE_LENGTH_START:
         case PACKAGE_MODE_LENGTH_CONT:
             s = syntiant_pkg_read_length(pstate);
-            if (s) goto error;
+            if (s) { 
+                goto error;
+            }
             break;
         case PACKAGE_MODE_VALUE_START:
         case PACKAGE_MODE_VALUE_CONT:
             s = syntiant_pkg_read_value(pstate, collect_log);
-            if (s) goto error;
+            if (s) {
+                goto error;
+            }
             break;
         case PACKAGE_MODE_DONE:
             goto error;

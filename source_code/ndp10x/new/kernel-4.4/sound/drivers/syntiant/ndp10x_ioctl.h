@@ -60,14 +60,20 @@ struct ndp_timespec_s {
 struct ndp10x_watch_s {
     uint64_t classes;    /**< bit map of classes on which to report a match */
     int timeout;         /**< seconds -- < 0 -> wait indefinitely */
-    int flush;           /**< discard outstanding watch events */
+    int flush;           /**< discard outstanding watch events 
+                              if extract_match_mode != 0, also reenable
+                              background audio collection */
     int match;           /**< set if a match is detected */
     int class_index;     /**< match index if a match is detected */
     unsigned int info;   /**< additional information if a match is detected */
     int extract_match_mode;    /**< when watching in this mode, driver stops
-                                    collecting audio in the background */
+                                    collecting audio in the background.
+                                    if return status is EINTR, then 
+                                    the driver will not resume collecting
+                                    audio until flush && extract_match_mode */
     int extract_before_match;  /**< ms of audio to extract before match. 
-                                    Will return amount of audio available for extraction */
+                                    Will return amount of audio available for
+                                    extraction */
     struct ndp_timespec_s ts;
 };
 

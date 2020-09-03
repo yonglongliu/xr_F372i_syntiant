@@ -57,7 +57,6 @@ void __write_once_size(volatile void *p, void *res, int size)
 )
 #endif
 
-
 #if (LINUX_VERSION_CODE < KERNEL_VERSION(3,15,0))
 #include <linux/irq.h>
 #include <linux/irqdesc.h>

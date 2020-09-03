@@ -25,7 +25,6 @@
 #include <time.h>
 #include <inttypes.h>
 #include <unistd.h>
-#include <arpa/inet.h>
 
 #include <hardware/sound_trigger.h>
 #include <system/sound_trigger.h>
@@ -34,19 +33,34 @@
 
 void print_sound_model(struct sound_trigger_phrase_sound_model* model, char* extra_text) {
   unsigned int i, j;
+  uint64_t uuid_time_val = 0;
+  uint64_t timeLow;
+  uint64_t timeMid;
+  uint64_t timeHiAndVersion;
+  uint64_t timeHi;
+  int version;
   printf("Parsed %smodel:\n", extra_text);
   printf("  Vendor UUID: ");
-  printf("%08x-%04x-%04x-%04x-%02x%02x%02x%02x%02x%02x\n", ntohl(model->common.vendor_uuid.timeLow),
-         ntohs(model->common.vendor_uuid.timeMid), ntohs(model->common.vendor_uuid.timeHiAndVersion),
-         ntohs(model->common.vendor_uuid.clockSeq), model->common.vendor_uuid.node[0], model->common.vendor_uuid.node[1],
+  printf("%08x-%04x-%04x-%04x-%02x%02x%02x%02x%02x%02x\n", model->common.vendor_uuid.timeLow,
+         model->common.vendor_uuid.timeMid, model->common.vendor_uuid.timeHiAndVersion,
+         model->common.vendor_uuid.clockSeq, model->common.vendor_uuid.node[0], model->common.vendor_uuid.node[1],
          model->common.vendor_uuid.node[2], model->common.vendor_uuid.node[3], model->common.vendor_uuid.node[4],
          model->common.vendor_uuid.node[5]);
   printf("  Model UUID:  ");
-  printf("%08x-%04x-%04x-%04x-%02x%02x%02x%02x%02x%02x\n", ntohl(model->common.uuid.timeLow),
-         ntohs(model->common.uuid.timeMid), ntohs(model->common.uuid.timeHiAndVersion),
-         ntohs(model->common.uuid.clockSeq), model->common.uuid.node[0], model->common.uuid.node[1],
+  printf("%08x-%04x-%04x-%04x-%02x%02x%02x%02x%02x%02x\n", model->common.uuid.timeLow,
+         model->common.uuid.timeMid, model->common.uuid.timeHiAndVersion,
+         model->common.uuid.clockSeq, model->common.uuid.node[0], model->common.uuid.node[1],
          model->common.uuid.node[2], model->common.uuid.node[3], model->common.uuid.node[4],
          model->common.uuid.node[5]);
+  timeLow = model->common.uuid.timeLow;
+  timeMid = model->common.uuid.timeMid;
+  timeHiAndVersion = model->common.uuid.timeHiAndVersion;
+  timeHi = timeHiAndVersion & 0xfff;
+  version = (timeHiAndVersion & 0xf000) >> 12;
+  if (version == 1) {
+        uuid_time_val = timeLow + (timeMid * 0x100000000) + (timeHi * 0x1000000000000);
+  }
+  printf("    UUID Time Val: %llu\n", uuid_time_val);
   printf("  Num Phrases: %d\n", model->num_phrases);
   for (i = 0; i < model->num_phrases; i++) {
     printf("    Text : %s\n", model->phrases[i].text);

@@ -5,7 +5,8 @@ ndp10x-objs += ndp10x_driver.o syntiant_ndp.o syntiant_ndp10x.o \
 
 # to run SPI at 8MHz, use e.g. following approach
 #ccflags-y:= -DSPI_SPLIT=0 -DSPI_READ_DELAY=3 -DMAX_SPEED=8000000
-ccflags-y:= -DSPI_READ_DELAY=3
+
+ccflags-y:= -DSPI_SPLIT=0
 
 all:
 	make -C /lib/modules/$(shell uname -r)/build M=$(CURDIR) modules

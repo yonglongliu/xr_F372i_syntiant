@@ -21,6 +21,8 @@
 
 #include "SyntiantUserModelEnroller.h"
 #include "syntiant_soundmodel.h"
+#include <sound_trigger_ndp10x.h>
+
 
 // file name (incl index) for dumps of enrollment data
 #define ENROLL_DUMP_FILE_NAME "/data/aov/user_model_enroll_data%d.raw"
@@ -40,7 +42,8 @@ SyntiantUserModelEnroller::SyntiantUserModelEnroller()
 
 SyntiantUserModelEnroller::~SyntiantUserModelEnroller() {}
 
-int SyntiantUserModelEnroller::add(uint8_t* data, unsigned int data_len) {
+int SyntiantUserModelEnroller::add(uint8_t* data, unsigned int data_len,
+                                   unsigned long confidence_level) {
   struct sound_trigger_phrase_sound_model dummy_model;
   unsigned int num_recordings;
   audio_config_t audio_config;
@@ -54,9 +57,48 @@ int SyntiantUserModelEnroller::add(uint8_t* data, unsigned int data_len) {
                                                                 &audio_config);
 
   if (data_len > audio_config.frame_count * sizeof(short)) {
+    std::cerr << "#### Received long audio sample (" << data_len << "). Adjusting length." << std::endl;
     data += data_len - audio_config.frame_count * sizeof(short);
     data_len = audio_config.frame_count * sizeof(short);
   }
+
+#if 0
+  /* validate that no excessive clipping is happening */
+  const int clip_threshold = 10;
+  int n_clipped = 0;
+  short *pData = (short*)data;
+  for (int n = 0; n < data_len/sizeof(short); n++) {
+    if((*pData == -0x7fff) ||
+       (*pData ==  0x7fff)) {
+      n_clipped++;
+    }
+    pData++;
+
+    if(n_clipped > clip_threshold) {
+      std::cerr << ">>>> Speaking too loudly, compromising enrollment!  "
+                   "Speak softer or move phone further away from mouth"
+                   << std::endl;
+      return 0;
+    }
+  }
+#else
+  if (confidence_level == UTTERANCE_SATURATED) {
+    std::cerr << ">>>> Speaking too loudly, compromising enrollment!  "
+                 "Speak softer or move phone further away from mouth"
+                 << std::endl;
+    return 0;
+  } else if (confidence_level == UTTERANCE_TOO_NOISY) {
+    std::cerr << ">>>> Environment too noisy, compromising enrollment!  "
+                 "Please find a quieter area during enrollment"
+                 << std::endl;
+    return 0;
+  } else if (confidence_level == UTTERANCE_TOO_SOFT) {
+    std::cerr << ">>>> Speaking too softly, compromising enrollment!  "
+                 "Speak a little louder or move closer to phone"
+                 << std::endl;
+    return 0;
+  }
+#endif
 
   if (strlen(ENROLL_DUMP_FILE_NAME) > 0) {
     sprintf(buf, ENROLL_DUMP_FILE_NAME, mCurrentIdx);

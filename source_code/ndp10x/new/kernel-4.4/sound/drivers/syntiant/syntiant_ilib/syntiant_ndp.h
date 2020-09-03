@@ -193,6 +193,7 @@ struct syntiant_ndp_integration_interfaces_s {
 };
 
 struct syntiant_ndp_device_s;
+struct syntiant_ndp_driver_s;
 
 
 /*
@@ -386,20 +387,16 @@ extern int syntiant_ndp_interrupts(struct syntiant_ndp_device_s *ndp, int *on);
  * @brief notification causes
  */
 enum syntiant_ndp_notification_e {
-    SYNTIANT_NDP_NOTIFICATION_ERROR = 0x01,     /**< unexpected error */
-    SYNTIANT_NDP_NOTIFICATION_MATCH = 0x02,     /**< algorithm match reported */
-    SYNTIANT_NDP_NOTIFICATION_DNN = 0x04,
-    /**< Interrupt for DNN reported */
-    SYNTIANT_NDP_NOTIFICATION_MAILBOX_IN = 0x08,
-    /**< host mailbox request complete */
-    SYNTIANT_NDP_NOTIFICATION_MAILBOX_OUT = 0x10,
-    /**< ndp mailbox request start */
-    SYNTIANT_NDP_NOTIFICATION_WATER_MARK = 0x20,
-    /**< input buffer water mark reached  */
-    SYNTIANT_NDP_NOTIFICATION_FEATURE = 0x40,
-    /**< fequency domain processing completion event */
+    SYNTIANT_NDP_NOTIFICATION_ERROR = 0x01,         /**< unexpected error */
+    SYNTIANT_NDP_NOTIFICATION_MATCH = 0x02,         /**< algorithm match reported */
+    SYNTIANT_NDP_NOTIFICATION_DNN = 0x04,           /**< Interrupt for DNN reported */
+    SYNTIANT_NDP_NOTIFICATION_MAILBOX_IN = 0x08,    /**< host mailbox request complete */
+    SYNTIANT_NDP_NOTIFICATION_MAILBOX_OUT = 0x10,   /**< ndp mailbox request start */
+    SYNTIANT_NDP_NOTIFICATION_WATER_MARK = 0x20,    /**< input buffer water mark reached  */
+    SYNTIANT_NDP_NOTIFICATION_FEATURE = 0x40,       /**< fequency domain processing completion event */
+    SYNTIANT_NDP_NOTIFICATION_EXTRACT_READY = 0X80, /**< Data ready to be extracted from DSP */
     SYNTIANT_NDP_NOTIFICATION_ALL_M
-    = ((SYNTIANT_NDP_NOTIFICATION_FEATURE << 1) - 1)
+    = ((SYNTIANT_NDP_NOTIFICATION_EXTRACT_READY  << 1) - 1)
 };
 
 /**
@@ -532,9 +529,10 @@ extern int syntiant_ndp_send_data(
 enum syntiant_ndp_extract_type_e {
     SYNTIANT_NDP_EXTRACT_TYPE_INPUT = 0x00,    /**< 'raw' input data */
     SYNTIANT_NDP_EXTRACT_TYPE_FEATURES = 0x01, /**< neural net input features */
-    SYNTIANT_NDP_EXTRACT_TYPE_FEATURE_STATIC = 0x03 ,
+    SYNTIANT_NDP_EXTRACT_TYPE_FEATURE_STATIC = 0x03,
+    SYNTIANT_NDP_EXTRACT_TYPE_INPUT_ANNOTATED = 0x04, /**< 'raw' input data  + 2 extra bytes about input_src and input_param*/
     /**< dnn static features */
-    SYNTIANT_NDP_EXTRACT_TYPE_LAST = SYNTIANT_NDP_EXTRACT_TYPE_FEATURE_STATIC
+    SYNTIANT_NDP_EXTRACT_TYPE_LAST = SYNTIANT_NDP_EXTRACT_TYPE_INPUT_ANNOTATED 
 };
 
 /**

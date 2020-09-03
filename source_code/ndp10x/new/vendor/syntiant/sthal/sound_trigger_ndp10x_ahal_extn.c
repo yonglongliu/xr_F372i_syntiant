@@ -15,7 +15,6 @@
  */
 
 #define LOG_TAG "SyntiantSoundTriggerHAL"
-#define LOG_NDEBUG 0
 
 #include <cutils/log.h>
 #include <utils/Log.h>
@@ -167,7 +166,7 @@ __attribute__((visibility("default"))) size_t sound_trigger_read_samples(int cap
 
   num_samples = bytes / sizeof(short);
 
-  ALOGE("%s : enter capture_handle(%d) buffer(%p) num_samples(%zu)", __func__, capture_handle,
+  ALOGV("%s : enter capture_handle(%d) buffer(%p) num_samples(%zu)", __func__, capture_handle,
         samples, num_samples);
 
   pthread_mutex_lock(&stdev->lock);
@@ -222,13 +221,13 @@ __attribute__((visibility("default"))) size_t sound_trigger_read_samples(int cap
 
   ret = bytes;
 
-  ALOGE("%s : exiting ", __func__);
+  ALOGV("%s : exiting ", __func__);
 
   return ret;
 
 exit_locked:
   pthread_mutex_unlock(&stdev->lock);
-  ALOGE("%s : exiting ", __func__);
+  ALOGV("%s : exiting ", __func__);
 
   // if (fp != NULL) {
   //     ALOGE("%s : writing to debug ", __func__);
@@ -242,7 +241,7 @@ __attribute__((visibility("default"))) int sound_trigger_close_for_streaming(
     int capture_handle __unused) {
   struct syntiant_ndp10x_stdev* stdev = &ndp10x_stdev_g;
   int s = 0;
-  ALOGE("%s called", __func__);
+  ALOGV("%s called", __func__);
   pthread_mutex_lock(&stdev->lock);
   stdev->current_mode = STDEV_MODE_IDLE;
   stdev->capture_handle = 0;
@@ -264,19 +263,19 @@ __attribute__((visibility("default"))) int sound_trigger_notify(uint8_t notifica
   switch (notification) {
     case AHAL_NOTIFICATION_PLAYBACK_STARTED:
       stdev->currently_ahal_playing = true;
-      ALOGI("%s: Playback started", __func__);
+      ALOGV("%s: Playback started", __func__);
       break;
     case AHAL_NOTIFICATION_PLAYBACK_STOPPED:
       stdev->currently_ahal_playing = false;
-      ALOGI("%s: Playback stopped", __func__);
+      ALOGV("%s: Playback stopped", __func__);
       break;
     case AHAL_NOTIFICATION_CAPTURE_STARTED:
       stdev->currently_ahal_recording = true;
-      ALOGI("%s: Capture started", __func__);
+      ALOGV("%s: Capture started", __func__);
       break;
     case AHAL_NOTIFICATION_CAPTURE_STOPPED:
       stdev->currently_ahal_recording = false;
-      ALOGI("%s: Capture stopped", __func__);
+      ALOGV("%s: Capture stopped", __func__);
       break;
   }
   pthread_mutex_unlock(&stdev->lock);

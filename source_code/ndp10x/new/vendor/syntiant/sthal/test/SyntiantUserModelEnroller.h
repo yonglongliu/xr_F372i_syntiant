@@ -34,13 +34,13 @@ class SyntiantUserModelEnroller {
   };
 
   int clear();
-  int add(uint8_t* data, unsigned int data_len);
+  int add(uint8_t* data, unsigned int data_len, unsigned long confidence_level);
     int train(struct sound_trigger_phrase_sound_model* src_model, uint8_t** buffer, uint32_t* size, int user_id = 0);
 
  private:
   unsigned int mCurrentIdx;
-  /* supports max 2 seconds of audio @16 ksamples/sec */
-  uint8_t mRecordings[SYNTIANT_ST_SOUND_MODEL_MAX_ENROLLMENT_RECORDINGS][16000 * sizeof(short) * 2];
+  /* supports max 3 seconds of audio @16 ksamples/sec */
+  uint8_t mRecordings[SYNTIANT_ST_SOUND_MODEL_MAX_ENROLLMENT_RECORDINGS][16000 * sizeof(short) * 3];
 
   /* when true => use the original interface for ExtendSoundModel when enrolling */
   bool mUseCompatInterface;

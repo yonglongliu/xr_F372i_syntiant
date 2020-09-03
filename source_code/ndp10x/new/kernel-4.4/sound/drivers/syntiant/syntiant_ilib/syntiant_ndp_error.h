@@ -35,13 +35,16 @@ enum syntiant_ndp_errors_e {
     SYNTIANT_NDP_ERROR_BUSY = 7,    /**< operation in progress */
     SYNTIANT_NDP_ERROR_TIMEOUT = 8, /**< operation timeout */
     SYNTIANT_NDP_ERROR_MORE = 9,    /**< more data is expected */ 
-    SYNTIANT_NDP_ERROR_LAST = SYNTIANT_NDP_ERROR_MORE
+    SYNTIANT_NDP_ERROR_CONFIG = 10, /**< config error */
+    SYNTIANT_NDP_ERROR_CRC = 11,    /**< CRC mismatch */
+    SYNTIANT_NDP_ERROR_INVALID_NETWORK = 12, /**< invalid network id */
+    SYNTIANT_NDP_ERROR_LAST = SYNTIANT_NDP_ERROR_INVALID_NETWORK
 };
 
 #define SYNTIANT_NDP_ERROR_NAMES                                               \
     {                                                                          \
         "none", "fail", "arg", "uninit", "package", "unsup", "nomem", "busy",  \
-            "timeout", "more"                                                  \
+            "timeout", "more", "config", "crc"                                 \
     }
     
 #define SYNTIANT_NDP_ERROR_NAME(e)                                             \

@@ -21,17 +21,17 @@ prior written permission is obtained from Syntiant Corporation.
 #define CRC_POLYNOMIAL 0xEDB88320U
 
 uint32_t
-crc32_no_lib(uint8_t *bytes, int len)
+crc32_no_lib(uint8_t *bytes, size_t len)
 {
-    int i, j;
-    unsigned int byte, crc, mask;
+    size_t i, j;
+    uint32_t byte, crc, mask;
 
     i = 0;
     crc = 0xFFFFFFFF;
     for (i = 0; i < len; i++) {
         byte = bytes[i];    /* Get next byte */
         crc = crc ^ byte;
-        for (j = 7; j >= 0; j--) {    /* Do eight times */
+        for(j = 0; j < 8; ++j) {
             mask = (unsigned int) -(((int) crc) & 1);
             crc = (crc >> 1) ^ (CRC_POLYNOMIAL & mask);
         }
@@ -46,16 +46,16 @@ crc32_no_lib_init(void)
 }
 
 uint32_t
-crc32_no_lib_update(unsigned int crc, uint8_t *bytes, int len)
+crc32_no_lib_update(uint32_t crc, uint8_t *bytes, size_t len)
 {
-    int i, j;
+    size_t i, j;
     unsigned int byte, mask;
 
     i = 0;
     for (i = 0; i < len; i++) {
         byte = bytes[i];    /* Get next byte */
         crc = crc ^ byte;
-        for (j = 7; j >= 0; j--) {    /* Do eight times */
+        for(j = 0; j < 8; ++j) {
             mask = (unsigned int) -(((int) crc) & 1);
             crc = (crc >> 1) ^ (CRC_POLYNOMIAL & mask);
         }

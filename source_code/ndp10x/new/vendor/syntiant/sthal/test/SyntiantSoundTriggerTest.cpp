@@ -137,6 +137,9 @@ int main(int argc, char** argv) {
   sprintf(eng_mode_str, "%d", eng_mode);
   property_set("syntiant.sthal.eng_mode", eng_mode_str);
 
+  sprintf(eng_mode_str, "%d", 1000);
+  property_set("syntiant.sthal.dump_files", eng_mode_str);
+
   android::ProcessState::self()->startThreadPool();
   SyntiantFakeVoiceAssistant session(firmware_file, saved_model_file, short_output_format,
                                      enroll_user, user_id, recognition_mode, record_len_ms);

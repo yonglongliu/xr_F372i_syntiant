@@ -390,7 +390,7 @@ void SyntiantFakeVoiceAssistant::onRecognitionEvent(struct sound_trigger_recogni
       unsigned int len = p->u.opaque_v1.audio_data_len * sizeof(uint16_t);
       uint8_t* data = (uint8_t*)&p->u.opaque_v1.audio_data[0];
 
-      mSpeakerIDEnroller.add(data, len);
+      mSpeakerIDEnroller.add(data, len, phrase_event->phrase_extras[0].confidence_level);
     }
   }
 

@@ -852,8 +852,7 @@ syntiant_ndp10x_pkg_parse_nn_params_v3_tlv(
 }
 
 int
-syntiant_ndp10x_pkg_parse_ph_params_v4_tlv(
-    struct syntiant_ndp_device_s *ndp){
+syntiant_ndp10x_pkg_parse_ph_params_v4_tlv(struct syntiant_ndp_device_s *ndp){
     int s = SYNTIANT_NDP_ERROR_NONE;
     struct syntiant_ndp10x_posterior_config_s ph_config;
     unsigned int cur_state, cur_class;

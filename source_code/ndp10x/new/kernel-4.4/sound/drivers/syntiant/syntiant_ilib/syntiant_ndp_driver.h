@@ -72,6 +72,8 @@ struct syntiant_ndp_device_s {
     } d;
 };
 
+struct syntiant_ndp_driver_s* syntiant_ndp_get_driver(void);
+
 #ifdef __cplusplus
 }
 #endif

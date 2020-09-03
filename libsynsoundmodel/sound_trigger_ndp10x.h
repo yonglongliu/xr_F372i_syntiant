@@ -37,4 +37,9 @@ struct syntiant_ndp10x_recognition_event_opaque_s {
   union syntiant_ndp10x_recognition_event_opaque_u u;
 };
 
+enum ndp_recognition_score_validation_mapping_e {
+  UTTERANCE_SATURATED = 1,
+  UTTERANCE_TOO_NOISY = 2,
+  UTTERANCE_TOO_SOFT  = 3
+};
 #endif

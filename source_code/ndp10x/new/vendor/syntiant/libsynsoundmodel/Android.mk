@@ -19,6 +19,9 @@ include $(CLEAR_VARS)
 LOCAL_MODULE := libsynsoundmodel
 
 LOCAL_CFLAGS := -g -Wall -Werror
+ifeq ($(TARGET_BUILD_VARIANT),userdebug)
+LOCAL_CFLAGS += -DLOG_NDEBUG=0
+endif
 LOCAL_MODULE_TAGS := optional
 
 LOCAL_C_INCLUDES += \
@@ -41,6 +44,7 @@ LOCAL_SHARED_LIBRARIES := \
 
 LOCAL_PROPRIETARY_MODULE := true
 include $(BUILD_SHARED_LIBRARY)
+
 
 include $(CLEAR_VARS)
 LOCAL_MODULE := soundmodel_test

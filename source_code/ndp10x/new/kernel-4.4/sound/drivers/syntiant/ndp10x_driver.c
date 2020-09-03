@@ -41,6 +41,10 @@
 #include <linux/input.h>
 #include <linux/gpio_keys.h>
 
+#ifdef CONFIG_COMPAT
+#include <asm/compat.h>
+#endif
+
 #include "linux_backports.h"
 
 #include "ndp10x_ioctl.h"
@@ -127,6 +131,7 @@ struct ndp10x_s {
     wait_queue_head_t result_waitq;
 #ifdef CONFIG_PM_SLEEP
     int suspended;
+    unsigned int irq_during_suspend_cnt;
 #endif
     uint64_t isrs;
     uint64_t polls;
@@ -270,9 +275,10 @@ static int ndp10x_driver_suspend(struct device *spi)
 {
     struct ndp10x_spi_dev_s *spi_dev =
         spi_get_drvdata((struct spi_device *)spi);
-    pr_debug("%s irq=%d\n", __func__, spi_dev->spi->irq);
+    pr_debug("%s irq=%d\n", __func__, spi_dev->spi->irq);    
+    /* disable irq waits for any pending IRQ handlers */
+    disable_irq(spi_dev->spi->irq);
     WRITE_ONCE(spi_dev->ndp10x->suspended, 1);
-    synchronize_irq(spi_dev->spi->irq);
     enable_irq_wake(spi_dev->spi->irq);
     return 0;
 }
@@ -284,8 +290,7 @@ static int ndp10x_driver_resume(struct device *spi)
     pr_debug("%s irq=%d\n", __func__, spi_dev->spi->irq);
     disable_irq_wake(spi_dev->spi->irq);
     WRITE_ONCE(spi_dev->ndp10x->suspended, 0);
-    /* there may have been an IRQ during our suspend */
-    irq_wake_thread(spi_dev->spi->irq, spi_dev);
+    enable_irq(spi_dev->spi->irq);
     return 0;
 }
 #endif
@@ -305,8 +310,8 @@ static int ndp10x_driver_resume(struct device *spi)
 static void
 ring_reset(struct ndp_ring_s *ring)
 {
-    ring->producer = 0;
-    ring->consumer = 0;
+    WRITE_ONCE(ring->producer, 0);
+    WRITE_ONCE(ring->consumer, 0);
 }
 
 static void
@@ -554,6 +559,14 @@ ndp10x_get_type(void *d, unsigned int *type)
     struct ndp10x_s *ndp10x = d;
     int s = SYNTIANT_NDP_ERROR_NONE;
     uint8_t in;
+    struct device *spidev = &ndp10x->spi_dev.spi->dev;
+
+    if (!of_find_property(spidev->of_node, "reset-fix-disable", NULL)) {
+        s = syntiant_ndp10x_reset_fix(ndp10x->ndp);
+        if (s) {
+            return s;
+        }
+    }
 
     pr_debug("%s: reading device id\n", __func__);
 
@@ -613,12 +626,11 @@ ndp10x_transfer(void *d, int mcu, uint32_t addr, void *out, void *in,
     }
 
     s = ndp10x_spi_transfer(ndp10x, mcu, addr, out, in, count);
-    if (s < 0) {
+    if (s) {
         pr_crit("%s: unable to transfer to the SPI device\n", __func__);
-        return SYNTIANT_NDP_ERROR_FAIL;
     }
 
-    return SYNTIANT_NDP_ERROR_NONE;
+    return s;
 }
 
 static int
@@ -992,6 +1004,14 @@ static int ndp10x_procfs_info_show(struct seq_file *m, void *data)
                        s, freq, eq);
         }
     }
+    seq_printf(m, "armed: %d\n",
+               READ_ONCE(ndp10x->armed));
+    seq_printf(m, "armed watch active: %d\n",
+               READ_ONCE(ndp10x->armed_watch_active));
+#ifdef CONFIG_PM_SLEEP
+    seq_printf(m, "interrupts during suspend: %u\n",
+               ndp10x->irq_during_suspend_cnt);               
+#endif
     return 0;    
 }
 
@@ -1057,7 +1077,7 @@ ndp10x_spi_transfer(struct ndp10x_s *ndp10x, int mcu, uint32_t addr,
                 mutex_unlock(&d->lock);
                 if (s0 < 0) {
                     pr_err("%s: unable to transfer first split on SPI device\n",
-                        __func__);
+                           __func__);
                     s = SYNTIANT_NDP_ERROR_FAIL;
                     goto error;
                 }
@@ -1067,13 +1087,13 @@ ndp10x_spi_transfer(struct ndp10x_s *ndp10x, int mcu, uint32_t addr,
                 i += 1;
             }
             /*
-            * this adds time between the command+address write
-            * and the read of the first MCU data, during which
-            * time the hardware is fetching data in the chip.
-            * spi_read_delay > 0 enables SPI clock rates > 1 mbps
-            * we read from bytes 1-3 of MADDR which are located before
-            * MDATA.
-            */
+             * this adds time between the command+address write
+             * and the read of the first MCU data, during which
+             * time the hardware is fetching data in the chip.
+             * spi_read_delay > 0 enables SPI clock rates > 1 mbps
+             * we read from bytes 1-3 of MADDR which are located before
+             * MDATA.
+             */
             memset(spi_cmd, 0, sizeof(spi_cmd));
             spi_cmd[0] = 0x80 | (NDP10X_SPI_MDATA(0) - d->spi_read_delay);
             tr[i].tx_buf = (char*) &spi_cmd[0];
@@ -1192,6 +1212,9 @@ ndp10x_poll_one(struct ndp10x_s *ndp10x)
 
         if (ndp10x->result_per_frame
             || (NDP10X_SPI_MATCH_MATCH_MASK & summary)) {
+#ifdef CONFIG_PM_SLEEP
+            pm_wakeup_event(&ndp10x->spi_dev.spi->dev, 2500);
+#endif
 
             if (READ_ONCE(ndp10x->armed)) {
                 spin_lock(&ndp10x->extract_ring_lock);
@@ -1396,9 +1419,9 @@ ndp10x_isr(int irq, void *dev_id)
     struct ndp10x_s *ndp10x = spi_dev->ndp10x;
 
 #ifdef CONFIG_PM_SLEEP
-    pm_wakeup_event(&spi_dev->spi->dev, 2500);
     if (READ_ONCE(ndp10x->suspended)) {
         pr_debug("%s: interrupt while suspended\n", __func__);
+        ndp10x->irq_during_suspend_cnt++;
         return IRQ_HANDLED;
     }
 #endif
@@ -1446,7 +1469,6 @@ static int
 ndp10x_ioctl_init(struct ndp10x_s *ndp10x)
 {
     struct syntiant_ndp_integration_interfaces_s iif;
-    struct syntiant_ndp_device_s *ndp = NULL;
     struct syntiant_ndp_config_s ndp_config;
     int s;
 
@@ -1463,14 +1485,12 @@ ndp10x_ioctl_init(struct ndp10x_s *ndp10x)
     iif.unsync = ndp10x_unsync;
     iif.transfer = ndp10x_transfer;
 
-    s = syntiant_ndp_init(&ndp, &iif, SYNTIANT_NDP_INIT_MODE_RESET);
+    s = syntiant_ndp_init(&ndp10x->ndp, &iif, SYNTIANT_NDP_INIT_MODE_RESET);
     if (s) {
         pr_alert("%s: chip %d init failed: %s\n", __func__, ndp10x->minor,
                  syntiant_ndp_error_name(s));
         return ndp10x_translate_error(s);
     }
-
-    ndp10x->ndp = ndp;
 
     s = ndp10x_enable(ndp10x);
     if (s) {
@@ -1479,7 +1499,7 @@ ndp10x_ioctl_init(struct ndp10x_s *ndp10x)
     }
 
     memset(&ndp_config, 0, sizeof(ndp_config));
-    s = syntiant_ndp_get_config(ndp, &ndp_config);
+    s = syntiant_ndp_get_config(ndp10x->ndp, &ndp_config);
     if (s) {
         ndp10x_ndp_uninit(ndp10x);
         pr_alert("%s: ndp10x_config error: %s\n", __func__,
@@ -2039,6 +2059,10 @@ ndp10x_ioctl_watch(struct ndp10x_s *ndp10x, struct ndp10x_watch_s *watch)
         spin_lock(&ndp10x->result_ring_lock);
         ring_reset(result_ring);
         spin_unlock(&ndp10x->result_ring_lock);
+        if (watch->extract_match_mode) {
+            WRITE_ONCE(ndp10x->armed, 0);
+            WRITE_ONCE(ndp10x->armed_watch_active, 0);
+        }
         goto out;
     }
 
@@ -2271,6 +2295,7 @@ ndp10x_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
 
     switch (cmd) {
     case INIT:
+    case TRANSFER:
     case DRIVER_CONFIG:
     case STATS:
         break;
@@ -2776,6 +2801,7 @@ ndp10x_ndp_uninit(struct ndp10x_s *ndp10x)
     }
     
     WRITE_ONCE(ndp10x->armed, 0);
+    WRITE_ONCE(ndp10x->armed_watch_active, 0);
     ndp10x->ndp = NULL;
     pr_debug("%s: NDP uninited\n", __func__);
 }

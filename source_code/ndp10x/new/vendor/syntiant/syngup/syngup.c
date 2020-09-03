@@ -15,7 +15,6 @@
  */
 
 #define LOG_TAG "Syngup"
-#define LOG_NDEBUG 0
 
 #include <assert.h>
 #include <fcntl.h>
@@ -111,7 +110,7 @@ static int syngup_decompress(void* bytes, uint32_t length, struct syngup_package
 
   memcpy(hdr, bytes, hdr_size);
   if (hdr->cookie != SYNGUP_COOKIE) {
-    ALOGV("%s: Invalid syncookie: 0x%x\n", __func__, hdr->cookie);
+    ALOGE("%s: Invalid syncookie: 0x%x\n", __func__, hdr->cookie);
     return -1;
   }
   compr_len = length - hdr_size;
@@ -124,13 +123,13 @@ static int syngup_decompress(void* bytes, uint32_t length, struct syngup_package
   ret =
       uncompress((Bytef*)zdata, (uLongf*)&hdr->inflated_len, (const Bytef*)bytes, (uLong)compr_len);
   if (ret) {
-    ALOGV("%s: err from uncompress: %d\n", __func__, ret);
+    ALOGE("%s: err from uncompress: %d\n", __func__, ret);
     goto err;
   }
   /* validate crc32 */
   crc = compute_crc(zdata, hdr->inflated_len);
   if (hdr->crc != crc) {
-    ALOGV("%s: CRC validation failed: crc:0x%x, computed:0x%x ret:%d\n", __func__, hdr->crc, (uint32_t)crc, ret);
+    ALOGE("%s: CRC validation failed: crc:0x%x, computed:0x%x ret:%d\n", __func__, hdr->crc, (uint32_t)crc, ret);
     goto err;
   }
   *d_ptr = (uint8_t*)zdata;
@@ -162,7 +161,7 @@ static int syngup_compress(uint8_t* bytes, struct syngup_package* hdr, uint32_t*
   /* compress the blobs */
   ret = compress((Bytef*)zdata, (uLongf*)&compr_len, (const Bytef*)bytes, inflated_len);
   if (ret) {
-    ALOGV("%s: error from compression: %d\n", __func__, ret);
+    ALOGE("%s: error from compression: %d\n", __func__, ret);
   } else {
     *deflated_size = compr_len;
     memcpy(bytes, zdata, *deflated_size);
@@ -230,7 +229,7 @@ static int syngup_extract(void* bytes, uint32_t uncompr_len, struct syn_pkg* pkg
 
     /* validate md5 digest */
     if (memcmp(cdigest, digest, MD5_DIGEST_LENGTH)) {
-      ALOGV("%s: Invalid md5 digest\n", __func__);
+      ALOGE("%s: Invalid md5 digest\n", __func__);
       ret = -1;
       ALOGV("\n cdigest\n");
       for (i = 0; i < 16; i++) {
@@ -283,7 +282,7 @@ cleanup:
     }
     head = head->next;
   }
-  ALOGV("%s: Couldn't allocate memory for blob:%d\n", __func__, tag);
+  ALOGE("%s: Couldn't allocate memory for blob:%d\n", __func__, tag);
   ;
   return -1;
 }
@@ -389,7 +388,7 @@ uint32_t syngup_pack_blobs(struct syngup_package* pkg, uint8_t* buffer) {
   buffer = buffer_begin + hdr_size;
   /* compress the conglomerate */
   if (syngup_compress(buffer, pkg, &deflated_len)) {
-    ALOGV("%s: Couldn't compress the blob\n", __func__);
+    ALOGE("%s: Couldn't compress the blob\n", __func__);
     return 0;
   }
   /* add syngup header */
@@ -412,7 +411,7 @@ int syngup_extract_blobs(struct syngup_package* pkg_head, void* begin_ptr, uint3
 
   error_code = syngup_decompress(begin_ptr, size, pkg_head, &bytes);
   if (error_code) {
-    ALOGV("%s: ndp10x decompress failed\n", __func__);
+    ALOGE("%s: ndp10x decompress failed\n", __func__);
     goto error;
   }
   head = &pkg_head->head;
@@ -420,7 +419,7 @@ int syngup_extract_blobs(struct syngup_package* pkg_head, void* begin_ptr, uint3
   while (num_pkgs) {
     pkgs = (struct syn_pkg*)malloc(sizeof(*pkgs));
     if (!pkgs) {
-      ALOGV("%s: ndp10x malloc for pkg_ptrs failed\n", __func__);
+      ALOGE("%s: ndp10x malloc for pkg_ptrs failed\n", __func__);
       goto error;
     }
     memset(pkgs, 0, sizeof(*pkgs));
@@ -431,7 +430,7 @@ int syngup_extract_blobs(struct syngup_package* pkg_head, void* begin_ptr, uint3
 
   error_code = syngup_extract((void*)bytes, pkg_head->inflated_len, pkg_head->head);
   if (error_code) {
-    ALOGV("%s: synpkg package decompression and parsing failed: %d\n", __func__, error_code);
+    ALOGE("%s: synpkg package decompression and parsing failed: %d\n", __func__, error_code);
     goto error;
   }
 
@@ -457,7 +456,7 @@ int syngup_add_component(struct syngup_package* pkg, void* model_data, uint32_t 
   struct syn_pkg** blob;
 
   if (!size) {
-    ALOGV("Can't add 0 sized data to syngup\n");
+    ALOGE("Can't add 0 sized data to syngup\n");
     return error_code;
   }
   if (!head->next) {
@@ -470,7 +469,7 @@ int syngup_add_component(struct syngup_package* pkg, void* model_data, uint32_t 
   blob = &head->next;
   *blob = malloc(sizeof(*head));
   if (!*blob) {
-    ALOGV("Couldn't allocate memory for this component\n");
+    ALOGE("Couldn't allocate memory for this component\n");
     error_code = -1;
     goto error;
   }
@@ -478,7 +477,7 @@ int syngup_add_component(struct syngup_package* pkg, void* model_data, uint32_t 
   memset(*blob, 0, sizeof(struct syn_pkg));
   (*blob)->data = malloc(sizeof(uint8_t) * size);
   if (!(*blob)->data) {
-    ALOGV("Couldn't allocate data memory for this component\n");
+    ALOGE("Couldn't allocate data memory for this component\n");
     error_code = -1;
     free(*blob);
     *blob = NULL;
@@ -561,7 +560,7 @@ int syngup_del_blob(struct syngup_package* pkg, uint8_t* data, uint32_t size, ui
 
   ret = syngup_extract_blobs(pkg, (void*)data, size);
   if (ret) {
-    ALOGV("Error(%d) while extract blobs\n", ret);
+    ALOGE("Error(%d) while extract blobs\n", ret);
     return ret;
   }
   return syngup_del_component(pkg, model_uuid);
@@ -578,7 +577,7 @@ int syngup_get_component(struct syn_pkg* pkg_list, struct syn_pkg** pkg, uint32_
     pkg_list = pkg_list->next;
   }
   if (!*pkg) {
-    ALOGV("%s: pkg not found\n", __func__);
+    ALOGE("%s: pkg not found\n", __func__);
     return -1;
   }
   return 0;
@@ -593,7 +592,7 @@ int syngup_get_posterior_data(struct syngup_package* pkgs, struct syn_pkg** pkg,
 
   error_code = syngup_get_component(pkgs->head, pkg, TAG_POSTERIOR_FILE);
   if (error_code) {
-    ALOGV("%d not found\n", TAG_POSTERIOR_FILE);
+    ALOGE("%d not found\n", TAG_POSTERIOR_FILE);
     return error_code;
   }
   bytes = (*pkg)->data;

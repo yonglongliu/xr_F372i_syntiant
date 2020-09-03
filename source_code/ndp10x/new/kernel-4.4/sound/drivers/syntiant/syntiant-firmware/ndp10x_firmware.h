@@ -82,7 +82,9 @@ extern struct ndp10x_fw_state_pointers_s fw_state_pointers;
 enum ndp10x_firmware_constants_e {
     NDP10X_MATCH_RING_SIZE = 2,
     NDP10X_MATCH_SNR_SHIFT = 8,
-    NDP10X_MATCH_SNR_MASK  = 0xff00
+    NDP10X_MATCH_SNR_MASK  = 0xff << NDP10X_MATCH_SNR_SHIFT,
+    NDP10X_MATCH_CONFIDENCE_SHIFT = 16,
+    NDP10X_MATCH_CONFIDENCE_MASK  = 0xff << NDP10X_MATCH_CONFIDENCE_SHIFT
 };
 
 struct ndp10x_fw_match_s {

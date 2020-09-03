@@ -230,6 +230,13 @@ int
 syntiant_ndp10x_do_mailbox_req0(struct syntiant_ndp_device_s *ndp, uint8_t req);
 
 int
+syntiant_ndp10x_wait_mb(struct syntiant_ndp_device_s *ndp, uint32_t address,
+                        uint8_t owner, uint8_t *vp);
+
+int
+syntiant_ndp10x_reset_fix(struct syntiant_ndp_device_s *ndp);
+
+int
 syntiant_ndp10x_reset(struct syntiant_ndp_device_s *ndp);
 
 int
@@ -986,6 +993,201 @@ error:
     return s;
 }
 
+const long int ndp10x_reset_fix_v1_synpkg_size = 280;
+const unsigned char ndp10x_reset_fix_v1_synpkg[280] = {
+    0x01, 0x00, 0x00, 0x00, 0x04, 0x00, 0x00, 0x00, 0xA1, 0xE5, 0xBD, 0x53, 0x02, 0x00, 0x00, 0x00,
+    0x14, 0x00, 0x00, 0x00, 0x6E, 0x64, 0x70, 0x31, 0x30, 0x78, 0x2D, 0x72, 0x65, 0x73, 0x65, 0x74,
+    0x2D, 0x66, 0x69, 0x78, 0x5F, 0x76, 0x31, 0x00, 0x08, 0x00, 0x00, 0x00, 0xDC, 0x00, 0x00, 0x00,
+    0x00, 0x70, 0x01, 0x20, 0xC1, 0xC0, 0xFF, 0x1F, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0xF0, 0x00, 0xF8, 0x03, 0x4B, 0x04, 0x4A, 0x19, 0x68, 0x0A, 0x40, 0x1A, 0x60, 0x19, 0x60,
+    0x30, 0xBF, 0xFD, 0xE7, 0x04, 0x90, 0x00, 0x40, 0xFF, 0xFF, 0x7F, 0xFF, 0x04, 0x00, 0x00, 0x00,
+    0x04, 0x00, 0x00, 0x00, 0xF2, 0x6D, 0x45, 0xAB
+};
+
+enum syntiant_ndp10x_boot_mb_const_e {
+    SYNTIANT_NDP10X_BOOT_MB_OPEN_RAM_SIZE = 1024,
+    SYNTIANT_NDP10X_BOOT_MB_OPEN_RAM_BASE = 0x20017c00,
+    SYNTIANT_NDP10X_BOOT_MB_OWNER_MASK = 0x80,
+    SYNTIANT_NDP10X_BOOT_MB_PAYLOAD_MASK = 0x7f,
+    SYNTIANT_NDP10X_BOOT_MB_REQUEST_LOAD = 0x9,
+    SYNTIANT_NDP10X_BOOT_MB_REQUEST_BOOTING = 0x11,
+    SYNTIANT_NDP10X_BOOT_MB_RESPONSE_ERROR = 0x20
+};
+
+int
+syntiant_ndp10x_wait_mb(struct syntiant_ndp_device_s *ndp, uint32_t address,
+                        uint8_t owner, uint8_t *vp)
+{
+    int i, s;
+    uint8_t v;
+    const int mb_timeout = 128;
+    
+    for (i = 0; i < mb_timeout; i++) {
+        s = syntiant_ndp10x_read(ndp, 0, address, &v);
+        if (s) {
+            return s;
+        }
+        if ((v & SYNTIANT_NDP10X_BOOT_MB_OWNER_MASK) == owner) {
+            break;
+        }
+    }
+    
+    if (i == mb_timeout) {
+        return SYNTIANT_NDP_ERROR_TIMEOUT;
+    }
+
+    *vp = v;
+    
+    return 0;
+}
+
+int
+syntiant_ndp10x_reset_fix(struct syntiant_ndp_device_s *ndp)
+{
+    uint8_t *pbytes = (uint8_t *) ndp10x_reset_fix_v1_synpkg;
+    unsigned int package_len = (unsigned int) ndp10x_reset_fix_v1_synpkg_size;
+    uint8_t mbin, mbout, mbin_resp, mbout_resp, req, resp;
+    unsigned int len, i, j;
+    int s, s0;
+
+    s = syntiant_ndp10x_write(ndp, 0, NDP10X_SPI_INTCTL, 0);
+    if (s) {
+        goto out;
+    }
+    
+    s = syntiant_ndp10x_write(ndp, 0, NDP10X_SPI_PLL,
+                              NDP10X_SPI_PLL_PLLRSTB(0));
+    if (s) {
+        goto out;
+    }
+    
+    s = syntiant_ndp10x_write(ndp, 0, NDP10X_SPI_PLL,
+                              NDP10X_SPI_PLL_PLLRSTB(1));
+    if (s) {
+        goto out;
+    }
+    
+    s = syntiant_ndp10x_write(ndp, 0, NDP10X_SPI_CTL,
+                              NDP10X_SPI_CTL_RESETN(0)
+                              | NDP10X_SPI_CTL_CLKEN(1)
+                              | NDP10X_SPI_CTL_EXTCLK(0)
+                              | NDP10X_SPI_CTL_BOOTDISABLE(1));
+    if (s) {
+        goto out;
+    }
+    
+    s = syntiant_ndp10x_write(ndp, 0, NDP10X_SPI_CTL,
+                              NDP10X_SPI_CTL_RESETN(1)
+                              | NDP10X_SPI_CTL_CLKEN(1)
+                              | NDP10X_SPI_CTL_EXTCLK(0)
+                              | NDP10X_SPI_CTL_BOOTDISABLE(0));
+    if (s) {
+        goto out;
+    }
+    
+    s = syntiant_ndp10x_wait_mb(ndp, NDP10X_SPI_MBOUT,
+                                SYNTIANT_NDP10X_BOOT_MB_OWNER_MASK, &mbout);
+    if (s) {
+        goto out;
+    }
+    
+    req = mbout & SYNTIANT_NDP10X_BOOT_MB_PAYLOAD_MASK;
+    if (req != SYNTIANT_NDP10X_BOOT_MB_REQUEST_BOOTING) {
+        s = SYNTIANT_NDP_ERROR_FAIL;
+        goto out;
+    }
+    
+    mbout_resp = SYNTIANT_NDP10X_BOOT_MB_OWNER_MASK
+        | SYNTIANT_NDP10X_MB_RESPONSE_SUCCESS;
+    s = syntiant_ndp10x_write(ndp, 0, NDP10X_SPI_MBOUT_RESP, mbout_resp);
+    if (s) {
+        goto out;
+    }
+
+    mbin = SYNTIANT_NDP10X_BOOT_MB_OWNER_MASK
+        | SYNTIANT_NDP10X_BOOT_MB_REQUEST_LOAD;
+    s = syntiant_ndp10x_write(ndp, 0, NDP10X_SPI_MBIN, mbin);
+    if (s) {
+        goto out;
+    }
+
+    s = syntiant_ndp10x_wait_mb(ndp, NDP10X_SPI_MBIN_RESP,
+                                SYNTIANT_NDP10X_BOOT_MB_OWNER_MASK & mbin,
+                                &mbin_resp);
+    if (s) {
+        goto out;
+    }
+
+    resp = mbin_resp & SYNTIANT_NDP10X_BOOT_MB_PAYLOAD_MASK;
+    if (resp != SYNTIANT_NDP10X_MB_RESPONSE_CONT) {
+        s = SYNTIANT_NDP_ERROR_FAIL;
+        goto out;
+    }
+    
+    for (i = 0; i < package_len; i += len) {
+        len = package_len - i;
+        if (SYNTIANT_NDP10X_BOOT_MB_OPEN_RAM_SIZE < len) {
+            len = SYNTIANT_NDP10X_BOOT_MB_OPEN_RAM_SIZE;
+        }
+        for (j = 0; j < len; j+= 4) {
+            s = syntiant_ndp10x_write_block(ndp, 1,
+                                    SYNTIANT_NDP10X_BOOT_MB_OPEN_RAM_BASE + j,
+                                    &pbytes[i] + j, 4);
+            if (s) {
+                goto out;
+            }
+        }
+        mbin = (uint8_t) (((mbin & SYNTIANT_NDP10X_BOOT_MB_OWNER_MASK)
+                           ^ SYNTIANT_NDP10X_BOOT_MB_OWNER_MASK)
+                          | SYNTIANT_NDP10X_MB_REQUEST_CONT);
+        s = syntiant_ndp10x_write(ndp, 0, NDP10X_SPI_MBIN, mbin);
+        if (s) {
+            goto out;
+        }
+        
+        s = syntiant_ndp10x_wait_mb(ndp, NDP10X_SPI_MBIN_RESP,
+                                    SYNTIANT_NDP10X_BOOT_MB_OWNER_MASK & mbin,
+                                    &mbin_resp);
+        if (s) {
+            goto out;
+        }
+        
+        resp = mbin_resp & SYNTIANT_NDP10X_BOOT_MB_PAYLOAD_MASK;
+        if (resp == SYNTIANT_NDP10X_MB_RESPONSE_SUCCESS) {
+            break;
+        }
+        if (resp == SYNTIANT_NDP10X_BOOT_MB_RESPONSE_ERROR) {
+            s = SYNTIANT_NDP_ERROR_PACKAGE;
+            goto out;
+        }
+        if (resp != SYNTIANT_NDP10X_MB_RESPONSE_CONT) {
+            s = SYNTIANT_NDP_ERROR_FAIL;
+            goto out;
+        }
+    }
+    
+    if (resp != SYNTIANT_NDP10X_MB_RESPONSE_SUCCESS) {
+        s = SYNTIANT_NDP_ERROR_PACKAGE;
+    }
+    
+ out:
+    s0 = syntiant_ndp10x_write(ndp, 0, NDP10X_SPI_INTSTS, 0x7f);
+    s = s ? s : s0;
+    return s;
+}
+
+
 int
 syntiant_ndp10x_reset(struct syntiant_ndp_device_s *ndp)
 {
@@ -1017,10 +1219,10 @@ syntiant_ndp10x_reset(struct syntiant_ndp_device_s *ndp)
 
     /* de-assert reset */
     data = NDP10X_SPI_CTL_RESETN(1) | NDP10X_SPI_CTL_CLKEN(1)
-         | NDP10X_SPI_CTL_EXTCLK(0) | NDP10X_SPI_CTL_BOOTDISABLE(1);
+         | NDP10X_SPI_CTL_EXTCLK(0) | NDP10X_SPI_CTL_BOOTDISABLE(0);
     s = syntiant_ndp10x_write(ndp, 0, NDP10X_SPI_CTL, data);
     if (s) goto error;
-
+    
     /* Drive the interrupt line output active high interrupts */
     data = NDP10X_SPI_CFG_INTEN(1) | NDP10X_SPI_CFG_INTNEG(0);
     s = syntiant_ndp10x_write(ndp, 0, NDP10X_SPI_CFG, data);
@@ -3528,7 +3730,7 @@ syntiant_ndp10x_config_set_clock(struct syntiant_ndp_device_s *ndp,
     }
     
     if (config->set & SYNTIANT_NDP10X_CONFIG_SET_DNN_CLOCK_RATE) {
-        if (config->mcu_clock_rate > SYNTIANT_NDP10X_MAX_DNN_RATE) {
+        if (config->dnn_clock_rate > SYNTIANT_NDP10X_MAX_DNN_RATE) {
             s = SYNTIANT_NDP_ERROR_ARG;
             goto out;
         }
@@ -4859,7 +5061,7 @@ syntiant_ndp10x_status(struct syntiant_ndp_device_s *ndp,
     return s;
 }
 
-unsigned int ndp10x_types[] = {
+uint32_t syntiant_ndp10x_device_types[] = {
     0x13, /* internal NDP101-ES */
     0x14, /* internal NDP101-ES */
     0x18, /* internal NDP100-ES */
@@ -4870,7 +5072,7 @@ unsigned int ndp10x_types[] = {
 };
 
 struct syntiant_ndp_driver_s syntiant_ndp10x_driver = {
-    ndp10x_types, syntiant_ndp10x_init, syntiant_ndp10x_uninit,
+    syntiant_ndp10x_device_types, syntiant_ndp10x_init, syntiant_ndp10x_uninit,
     syntiant_ndp10x_op_size, syntiant_ndp10x_interrupts, syntiant_ndp10x_poll,
     syntiant_ndp10x_load, syntiant_ndp10x_get_config, syntiant_ndp10x_send_data,
     syntiant_ndp10x_extract_data, syntiant_ndp10x_get_match_summary,
@@ -4920,4 +5122,9 @@ syntiant_ndp10x_debug_extract(
 
 error:
     return s;
+}
+
+struct syntiant_ndp_driver_s* syntiant_ndp_get_driver(void)
+{
+    return &syntiant_ndp10x_driver;
 }

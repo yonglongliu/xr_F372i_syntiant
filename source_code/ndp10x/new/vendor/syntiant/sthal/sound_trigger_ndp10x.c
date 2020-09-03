@@ -15,7 +15,6 @@
  */
 
 #define LOG_TAG "SyntiantSoundTriggerHAL"
-#define LOG_NDEBUG 0
 
 #define MAX_STRING_LENGTH 256
 
@@ -71,7 +70,7 @@ int stdev_update_input(void) {
   int input_type = NDP10X_HAL_INPUT_TYPE_NONE;
 
   pthread_mutex_lock(&stdev->lock);
-  ALOGI("%s : current_mode(%u) currently_ahal_recording(%d) currently_ahal_playing(%d)", __func__,
+  ALOGV("%s : current_mode(%u) currently_ahal_recording(%d) currently_ahal_playing(%d)", __func__,
         stdev->current_mode, stdev->currently_ahal_recording, stdev->currently_ahal_playing);
 
   // This is little complicated to understand
@@ -133,7 +132,7 @@ int stdev_update_input(void) {
   }
 
 exit:
-  ALOGE("%s : setting input to %d ", __func__, input_type);
+  ALOGV("%s : setting input to %d ", __func__, input_type);
   s = ndp10x_hal_set_input(stdev->ndp_handle, input_type, stdev->is_any_model_loaded);
   if (s < 0) {
     ALOGE("%s : error while setting input %d", __func__, input_type);
@@ -216,7 +215,10 @@ int stdev_load_spkr_id_model(struct syntiant_ndp10x_stdev* stdev, size_t num_use
     goto error;
   }
 
+  /* only supports one enrolled user for now */
+  stdev->speaker_id.enrolled_user_ids[0] = user_ids[0];
   stdev->speaker_id.enrolled_users = 1;
+
 error:
   return s;
 }
@@ -282,7 +284,7 @@ int stdev_load_phrase_sound_model(struct syntiant_ndp10x_stdev* stdev,
 
   s = syngup_get_sound_package(&package, &pkg);
   if (s) {
-    ALOGE("%s : Can not find user sound model\n", __func__);
+    ALOGI("%s : Can not find user sound model\n", __func__);
     s = 0;
     goto error;
   }
@@ -293,14 +295,18 @@ int stdev_load_phrase_sound_model(struct syntiant_ndp10x_stdev* stdev,
   /* take the meta data from user model and use here */
   struct phrase* ph =
         (struct phrase*)((uint8_t*)pkg->mdata + offsetof(struct synpkg_metadata, phrases));
-  unsigned int user_id = 0;
+  unsigned int user_id = 1;
   if (ph->users) {
     user_id = ph->users[0];
+    if (!user_id) {
+      /* user ID 0 is now reserved for imposter */
+      user_id = 1;
+    }
   }
   s = stdev_load_spkr_id_model(stdev, 1, &user_id, pkg->size, spkr_id_models, pkg->size);
 
   if (s < 0) {
-    ALOGE("%s : error while loading spkr id model", __func__);
+    ALOGE("%s : error while loading spkr id model %d", __func__, s);
     goto error;
   } else {
     /* take the meta data from user model and use here */
@@ -373,6 +379,7 @@ int stdev_load_sound_model(const struct sound_trigger_hw_device* dev,
 
 error:
   pthread_mutex_unlock(&stdev->lock);
+  stdev_stop_recognition(dev, stdev->model_handle);
   return s;
 }
 
@@ -399,9 +406,11 @@ int stdev_unload_sound_model(const struct sound_trigger_hw_device* dev,
   if (stdev->speaker_id.enrolled_users > 0) {
     int operating_point;
     for (i = 0; i < stdev->speaker_id.enrolled_users; i++) {
-      status = syntiant_st_speaker_id_engine_remove_user(stdev->speaker_id.pSpkrid_handle, i);
+      status = syntiant_st_speaker_id_engine_remove_user(stdev->speaker_id.pSpkrid_handle, 
+                                                         stdev->speaker_id.enrolled_user_ids[i]);
       if (status != SYNTIANT_ST_SPEAKER_ID_ERROR_NONE) {
-        ALOGE("%s : error while removing user ", __func__);
+        ALOGE("%s : error while removing user %d", __func__, 
+              stdev->speaker_id.enrolled_user_ids[i]);
       }
     }
 
@@ -453,11 +462,11 @@ int stdev_start_recognition(const struct sound_trigger_hw_device* dev, sound_mod
   ALOGV("%s : enter", __func__);
   ALOGV("%s : Recognition config capture_handle(%d) capture_device(0x%x) capture_requested(%d)",
         __func__, config->capture_handle, config->capture_device, config->capture_requested);
-ALOGV("%s :   recognition_modes(%d)",
+  ALOGV("%s :   recognition_modes(%d)",
         __func__, config->phrases[0].recognition_modes);
 
   if (handle != stdev->model_handle) {
-    ALOGV("%s : handle_error handle=%d   stdev->model_handle=%d", __func__, handle,
+    ALOGE("%s : handle_error handle=%d   stdev->model_handle=%d", __func__, handle,
           stdev->model_handle);
     return -EINVAL;
   }

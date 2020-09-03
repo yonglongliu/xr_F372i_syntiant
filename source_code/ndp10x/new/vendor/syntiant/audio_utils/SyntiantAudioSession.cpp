@@ -14,7 +14,6 @@
  *  unless prior written permission is obtained from Syntiant Corporation.
  */
 #define LOG_TAG "SyntiantAudioSession"
-#define LOG_NDEBUG 0
 
 #include <utils/Log.h>
 

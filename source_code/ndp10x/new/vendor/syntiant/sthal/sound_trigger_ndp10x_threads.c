@@ -15,7 +15,6 @@
  */
 
 #define LOG_TAG "SyntiantSoundTriggerHAL"
-#define LOG_NDEBUG 0
 
 #include <cutils/log.h>
 #include <cutils/properties.h>
@@ -44,15 +43,16 @@ static void stdev_ndp10x_watch_thread_sig(int sig, siginfo_t* info, void* uconte
   return;
 }
 
-#define DEFAULT_MAX_NUMBER_OF_DUMP_FILES 20
 static void dump_activation_to_file(short* samples, size_t num_samples, char* prefix, int inc_counter) {
   FILE* fp = NULL;
   static size_t activation_counter = 0;
   char activation_record_filename[MAX_STRING_LENGTH];
   size_t bytes_written = 0;
   int num_dump_files = property_get_int32("syntiant.sthal.dump_files", DEFAULT_MAX_NUMBER_OF_DUMP_FILES);
-  if (num_dump_files <= 0) {
+  if (num_dump_files < 0) {
     num_dump_files = DEFAULT_MAX_NUMBER_OF_DUMP_FILES;
+  } else if (num_dump_files == 0) {
+    return;
   }
 
   snprintf(activation_record_filename, MAX_STRING_LENGTH, "/data/aov/%s_%zu.raw", prefix,
@@ -61,7 +61,7 @@ static void dump_activation_to_file(short* samples, size_t num_samples, char* pr
     activation_counter++;
   }
 
-  ALOGI("%s: Now dumping %d bytes of audio to %s", __func__, num_samples * sizeof(short),
+  ALOGV("%s: Now dumping %d bytes of audio to %s", __func__, num_samples * sizeof(short),
         activation_record_filename);
   fp = fopen(activation_record_filename, "wb");
 
@@ -97,6 +97,8 @@ void* stdev_ndp10x_watch_thread_loop(void* p) {
   int confidence_score = 0;
   bool user_detected = 0;
   int inc_num_act = 0;
+  int utt_validation_res = 0;
+  unsigned int ndp_confidence_score;
 
   struct sigaction sa;
 
@@ -141,7 +143,7 @@ void* stdev_ndp10x_watch_thread_loop(void* p) {
       continue;
     }
 
-    ALOGE("%s : Going into watch mode ", __func__);
+    ALOGV("%s : Going into watch mode ", __func__);
 
     s = ndp10x_hal_wait_for_match_and_extract(stdev->ndp_handle, keyphrase_id, samples,
                                               num_samples, &match_additional_info);
@@ -150,6 +152,7 @@ void* stdev_ndp10x_watch_thread_loop(void* p) {
       ALOGE("%s : some error occurred while waiting and extracting", __func__);
       continue;
     }
+    ndp_confidence_score = 100 * ((match_additional_info >> 8) & 0xff) / 0xff;
 
 #ifdef ENABLE_ACTIVATION_DUMP
     inc_num_act = 0;
@@ -191,10 +194,67 @@ void* stdev_ndp10x_watch_thread_loop(void* p) {
                                                       &confidence_score, match_additional_info & 0xff);
 
       if (s != SYNTIANT_ST_SPEAKER_ID_ERROR_NONE) {
-        ALOGE("%s : Identifying user result : %d ", __func__, s);
-      } else {
+        switch (s) {
+        case SYNTIANT_ST_SPEAKER_ID_ERROR_NOISY_ENV_UTT:
+          ALOGV("%s : Noisy environment detected", __func__);
+          break;
+        case SYNTIANT_ST_SPEAKER_ID_ERROR_SOFT_SPOKEN_UTT:
+          ALOGV("%s : Softly spoken utterance detected", __func__);
+          break;
+        case SYNTIANT_ST_SPEAKER_ID_ERROR_LOUD_SPOKEN_UTT:
+          ALOGV("%s : Loudly spoken utterance detected", __func__);
+          break;
+        case SYNTIANT_ST_SPEAKER_ID_ERROR_NEED_LONGER_AUDIO:
+          ALOGW("%s : Insufficient audio was extracted", __func__);
+          break;
+        default:
+          ALOGV("%s : Identification result %d", __func__, s);
+          break;
+        }
+      }
+
+      /* user_id 0 signifies imposter starting with speaker ID lib 2.7.1 */
+      if (user_id != 0) {
         ALOGV("%s : user %d detected", __func__, user_id);
         user_detected = 1;
+      }
+    } else {
+      unsigned int length_recording = stdev->speaker_id.ww_len;
+
+      size_t sample_shift = ACTIVATION_RECORD_NUM_SAMPLES - stdev->speaker_id.ww_len;
+      short* audio_recording = samples + sample_shift;
+      /* voice recognition only - so we are in enrollment phase.
+       * what we do here is to validate the utterance with repect to how
+       * suitable it is for use as enrollment sample */
+      ALOGV("%s : checking utterance for enrollment validity (len=%d)", __func__, length_recording);
+      utt_validation_res = syntiant_st_speaker_id_engine_enroll_utt_validation(
+          audio_recording, length_recording);
+      /* translate the result to confidence score
+       * because of frameworks there are not a lot of other options */
+      switch (utt_validation_res) {
+        case SYNTIANT_ST_SPEAKER_ID_ERROR_NONE:
+          ALOGV("%s : Utterance validation OK", __func__);
+          /* all OK */
+          break;
+        case SYNTIANT_ST_SPEAKER_ID_ERROR_SATURATED_UTT:
+          ALOGW("%s : Saturated audio detected", __func__);
+          ndp_confidence_score = UTTERANCE_SATURATED;
+          break;
+        case SYNTIANT_ST_SPEAKER_ID_ERROR_SOFT_SPOKEN_UTT:
+          ALOGW("%s : Softly spoken utterance detected", __func__);
+          ndp_confidence_score = UTTERANCE_TOO_SOFT;
+          break;
+        case SYNTIANT_ST_SPEAKER_ID_ERROR_NOISY_ENV_UTT:
+          ALOGW("%s : Noisy enviroment detected", __func__);
+          ndp_confidence_score = UTTERANCE_TOO_NOISY;
+          break;
+        case SYNTIANT_ST_SPEAKER_ID_ERROR_NEED_LONGER_AUDIO:
+          ALOGW("%s : Insufficient audio was extracted", __func__);
+          /* we don't propagate this to user */
+          break;
+        default:
+          ALOGW("%s : unexpected validation result: %d", __func__, utt_validation_res);
+          break;
       }
     }
 #endif
@@ -267,15 +327,21 @@ void* stdev_ndp10x_watch_thread_loop(void* p) {
     event->common.audio_config.sample_rate = 16000;
 
     event->common.audio_config.frame_count = ACTIVATION_RECORD_NUM_SAMPLES;
-    ALOGE("%s : frame count %u", __func__, event->common.audio_config.frame_count);
+    ALOGV("%s : frame count %u", __func__, event->common.audio_config.frame_count);
     event->num_phrases = 1;
     event->phrase_extras[0].recognition_modes = RECOGNITION_MODE_VOICE_TRIGGER;
-    event->phrase_extras[0].confidence_level = 100;
+    event->phrase_extras[0].confidence_level = ndp_confidence_score;
     if (user_detected) {
       event->phrase_extras[0].recognition_modes |= RECOGNITION_MODE_USER_IDENTIFICATION;
       event->phrase_extras[0].num_levels = 1;
       event->phrase_extras[0].levels[0].level = confidence_score;
       event->phrase_extras[0].levels[0].user_id = user_id;
+      /* current framework does not support passing two confidence scores
+       * towards user, therefore pass the speaker ID confidence score in
+       * higher part of confidence score
+       */
+      event->phrase_extras[0].confidence_level |= confidence_score << 8;
+
     } else {
       event->phrase_extras[0].num_levels = 0;
     }

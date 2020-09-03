@@ -15,12 +15,21 @@
  */
 
 #define LOG_TAG "ndp10x_hal"
-#define LOG_NDEBUG 0
 
 #include "ndp10x_hal.h"
 #include <cutils/log.h>
 
 #include "syntiant_defs.h"
+
+/* for the ndp10x_hal_wait_for_match_and_extract() case,
+ * we may want to record a little bit of data (typically in the range 50-100 ms)
+ * after the wake word to make sure we get the full wake word in the recording.
+ * The NN may have decided to declare a match just before the end of the
+ * wake word - so we adjust for that by trading pre-roll with post-keyword
+ * audio
+ */
+#define EXTRACT_LEN_AFTER_KEYWORD_MS 100
+#define EXTRACT_LEN_AFTER_KEYWORD_SAMPLES (EXTRACT_LEN_AFTER_KEYWORD_MS * 16000 / 1000)
 
 int ndp10x_hal_open() {
   int handle = 0;
@@ -40,6 +49,7 @@ int ndp10x_hal_close(ndp10x_handle_t handle) {
 }
 
 int ndp10x_hal_init(ndp10x_handle_t handle) {
+  ALOGV("%s : enter", __func__);
   int s = 0;
   if (ioctl(handle, INIT, NULL) < 0) {
     PERROR("ndp10x default init ioctl failed");
@@ -57,7 +67,7 @@ int ndp10x_hal_load(ndp10x_handle_t handle, uint8_t* package, size_t package_siz
   int s = 0;
   int chunk_size;
 
-  ALOGI("%s : enter package_size=%d", __func__, package_size);
+  ALOGV("%s : enter package_size=%d", __func__, package_size);
 
   chunk_size = CHUNK_SIZE;
   begin_ptr = package;
@@ -85,7 +95,7 @@ int ndp10x_hal_load(ndp10x_handle_t handle, uint8_t* package, size_t package_siz
   }
 
 error:
-  ALOGI("%s : exit code %d ", __func__, s);
+  ALOGV("%s : exit code %d ", __func__, s);
   return s;
 }
 
@@ -96,7 +106,7 @@ void ndp10x_hal_print_ndp10x_config(ndp10x_handle_t handle) {
 
   if (done) return;
 
-  ALOGI("%s : enter", __func__);
+  ALOGV("%s : enter", __func__);
 
   struct syntiant_ndp10x_config_s ndp10x_config;
 
@@ -129,7 +139,7 @@ void ndp10x_hal_print_ndp10x_config(ndp10x_handle_t handle) {
 int ndp10x_hal_stats(ndp10x_handle_t handle, int commands) {
   struct ndp10x_statistics_s ndp_stats;
   int ret = 0;
-
+  ALOGV("%s : enter", __func__);
   memset(&ndp_stats, 0, sizeof(struct ndp10x_statistics_s));
 
   if (commands & NDP10X_HAL_STATS_COMMAND_CLEAR) {
@@ -160,6 +170,7 @@ exit:
 int ndp10x_hal_set_tank_size(ndp10x_handle_t handle, unsigned int tank_size) {
   int ret = 0;
   struct syntiant_ndp10x_config_s ndp10x_config;
+  ALOGV("%s : enter tank_size=%d", __func__, tank_size);
 
   memset(&ndp10x_config, 0, sizeof(struct syntiant_ndp10x_config_s));
   ndp10x_config.set = SYNTIANT_NDP10X_CONFIG_SET_TANK_SIZE;
@@ -207,6 +218,9 @@ int ndp10x_hal_set_input(ndp10x_handle_t handle, int input_type, int firmware_lo
      * queries work */
   }
 
+  ALOGV("%s : dnn_input = %d    tank_input = %d   match_per_frame = %d", __func__,
+        ndp10x_config.dnn_input, ndp10x_config.tank_input, ndp10x_config.match_per_frame_on);
+
   ret = ioctl(handle, NDP10X_CONFIG, &ndp10x_config);
   if (ret < 0) {
     PERROR("ndp10x_config set_config ioctl failed\n");
@@ -220,7 +234,7 @@ int ndp10x_hal_pcm_extract(ndp10x_handle_t handle, short* samples, size_t num_sa
   struct ndp10x_pcm_extract_s extract;
   memset(&extract, 0, sizeof(extract));
 
-  ALOGI("%s : enter num_samples(%zu) ", __func__, num_samples);
+  ALOGV("%s : enter num_samples(%zu) ", __func__, num_samples);
 
   if (num_samples == 0) {
     extract.flush = 1;
@@ -245,12 +259,16 @@ int ndp10x_hal_pcm_extract(ndp10x_handle_t handle, short* samples, size_t num_sa
   }
 
 exit:
+  ALOGV("%s : exit extracted(%zu) bytes", __func__, extract.extracted_length);
   return ret;
 }
 
 int ndp10x_hal_pcm_send(ndp10x_handle_t handle, short* samples, size_t num_samples) {
   struct ndp10x_pcm_send_s send;
   int ret = 0;
+
+  ALOGV("%s : enter ", __func__);
+
   memset(&send, 0, sizeof(send));
   send.buffer = (uintptr_t)(uint8_t*)samples;
   send.buffer_length = num_samples * sizeof(short);
@@ -266,6 +284,9 @@ int ndp10x_hal_pcm_send(ndp10x_handle_t handle, short* samples, size_t num_sampl
 int ndp10x_hal_get_audio_frame_size(ndp10x_handle_t handle, int* audio_frame_step) {
   int ret = 0;
   struct syntiant_ndp10x_config_s ndp10x_config;
+
+  ALOGV("%s : enter ", __func__);
+
   memset(&ndp10x_config, 0, sizeof(struct syntiant_ndp10x_config_s));
 
   ndp10x_config.get_all = 1;
@@ -287,6 +308,9 @@ int ndp10x_hal_flush_results(ndp10x_handle_t handle) {
   int s = 0;
   struct ndp10x_watch_s watch_result;
 
+  ALOGV("%s : enter ", __func__);
+
+  memset(&watch_result, 0, sizeof(struct ndp10x_watch_s));
   watch_result.flush = 1;
   s = ioctl(handle, WATCH, &watch_result);
   if (s < 0) {
@@ -307,7 +331,7 @@ int ndp10x_hal_get_num_phrases(ndp10x_handle_t handle, int* num_phrases) {
   char packagever[MAX_STRING_LENGTH] = { 0 };
   char label_data[MAX_STRING_LENGTH] = { 0 };
 
-  ALOGI("%s : enter", __func__);
+  ALOGV("%s : enter", __func__);
 
   memset(&config, 0, sizeof(config));
   config.device_type = (uintptr_t)device_type;
@@ -331,11 +355,11 @@ int ndp10x_hal_get_num_phrases(ndp10x_handle_t handle, int* num_phrases) {
   // for classes not "phrases"
   *num_phrases = config.classes;
 
-  ALOGE("%s : device_type %s ", __func__, device_type);
-  ALOGE("%s : fwver %s ", __func__, fwver);
-  ALOGE("%s : paramver %s ", __func__, paramver);
-  ALOGE("%s : packagever %s ", __func__, packagever);
-  ALOGE("%s : label_data %s ", __func__, label_data);
+  ALOGI("%s : device_type %s ", __func__, device_type);
+  ALOGI("%s : fwver %s ", __func__, fwver);
+  ALOGI("%s : paramver %s ", __func__, paramver);
+  ALOGI("%s : packagever %s ", __func__, packagever);
+  ALOGI("%s : label_data %s ", __func__, label_data);
 
 error:
   return s;
@@ -346,6 +370,8 @@ int ndp10x_hal_wait_for_match(ndp10x_handle_t handle, int keyphrase_id, int extr
   int s = 0;
   int num_phrases = -1;
   struct ndp10x_watch_s watch_result;
+
+  ALOGV("%s : enter ", __func__);
 
   s = ndp10x_hal_get_num_phrases(handle, &num_phrases);
   if (s < 0) {
@@ -370,7 +396,7 @@ int ndp10x_hal_wait_for_match(ndp10x_handle_t handle, int keyphrase_id, int extr
   watch_result.extract_match_mode = extract_match_mode;
   watch_result.extract_before_match = extract_before_match_ms;
 
-  ALOGE("%s : now watching for class %llu extract_match_mode(%d) extract_before_match(%d)",
+  ALOGV("%s : now watching for class %llu extract_match_mode(%d) extract_before_match(%d)",
         __func__, watch_result.classes, extract_match_mode, extract_before_match_ms);
   s = ioctl(handle, WATCH, &watch_result);
 
@@ -379,7 +405,7 @@ int ndp10x_hal_wait_for_match(ndp10x_handle_t handle, int keyphrase_id, int extr
     goto error;
   }
 
-  ALOGE("%s : classes index %d keyphrase id %d ", __func__, watch_result.class_index, keyphrase_id);
+  ALOGV("%s : classes index %d keyphrase id %d ", __func__, watch_result.class_index, keyphrase_id);
 
   if (watch_result.match && (watch_result.class_index != keyphrase_id)) {
     ALOGE("%s : something weird happened in watch ioctl", __func__);
@@ -390,7 +416,7 @@ int ndp10x_hal_wait_for_match(ndp10x_handle_t handle, int keyphrase_id, int extr
     *info = watch_result.info;
   }
 
-  ALOGE("%s : error code %d", __func__, s);
+  ALOGV("%s : error code %d", __func__, s);
 
 error:
   return s;
@@ -402,7 +428,7 @@ int ndp10x_hal_wait_for_match_and_extract(ndp10x_handle_t handle, int keyphrase_
   int extract_match_mode = (num_samples > 0) ? 1 : 0;
   int extract_before_match_ms = (((float)num_samples) / 16000) * 1000;
 
-  ALOGI("%s : keyphrase_id(%d) num_samples(%zu)", __func__, keyphrase_id, num_samples);
+  ALOGV("%s : keyphrase_id(%d) num_samples(%zu)", __func__, keyphrase_id, num_samples);
 
   s = ndp10x_hal_wait_for_match(handle, keyphrase_id, extract_match_mode, extract_before_match_ms, info);
   if (s < 0) {
@@ -412,6 +438,17 @@ int ndp10x_hal_wait_for_match_and_extract(ndp10x_handle_t handle, int keyphrase_
 
   if (num_samples == 0) {
     goto error;
+  }
+
+  if (EXTRACT_LEN_AFTER_KEYWORD_MS) {
+    short dummy_buffer[EXTRACT_LEN_AFTER_KEYWORD_SAMPLES];
+    ALOGV("%s : extracting the initial %zu samples to discard", __func__, 
+          EXTRACT_LEN_AFTER_KEYWORD_SAMPLES);
+    s = ndp10x_hal_pcm_extract(handle, dummy_buffer, 
+                               EXTRACT_LEN_AFTER_KEYWORD_SAMPLES);
+    if (s < 0) {
+      ALOGE("%s: error extracing audio to discard", __func__);
+    }
   }
 
   s = ndp10x_hal_pcm_extract(handle, samples, num_samples);
