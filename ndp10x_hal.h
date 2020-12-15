@@ -81,6 +81,11 @@ int ndp10x_hal_wait_for_match_and_extract(ndp10x_handle_t handle, int keyphrase_
 
 int ndp10x_hal_set_tank_size(ndp10x_handle_t handle, unsigned int tank_size);
 
+int ndp10x_hal_get_audio_pointers(ndp10x_handle_t handle, uint32_t audio_len,
+                                  uint32_t *start_of_keyword,
+                                  uint32_t *end_of_keyword);
+
+int ndp10x_hal_get_pcm_extract_bytes_avail(ndp10x_handle_t handle, unsigned int *bytes_avail);
 #ifdef __cplusplus
 }
 #endif

@@ -25,6 +25,7 @@
 #define TAG_POSTERIOR_FILE (46)
 #define TAG_TFLITE_FB_FILE (47)
 #define TAG_COMPOSITE_SOUND_CONTENT (48)
+#define TAG_HOST_CONFIG (57)
 
 #define SYN_SOUND_TRIGGER_MAX_LOCALE_LEN (6)
 #define SYN_SOUND_TRIGGER_MAX_USERS (10)
@@ -69,12 +70,12 @@ struct syn_pkg {
   uint32_t tag;
   uint32_t size;
   uint8_t digest[MD5_DIGEST_LENGTH];
-  uint8_t* data;
+  uint8_t *data;
   uint8_t persist;
   uint8_t loaded;
   uint32_t metadata_size;
-  struct synpkg_metadata* mdata;
-  struct syn_pkg* next;
+  struct synpkg_metadata *mdata;
+  struct syn_pkg *next;
 };
 
 /* Syngup package
@@ -89,7 +90,7 @@ struct syngup_package {
   uint32_t crc;
   uint32_t num_pkgs;
   uint32_t inflated_len;
-  struct syn_pkg* head;
+  struct syn_pkg *head;
 };
 
 struct ndp10x_ph_class_params_s;
@@ -103,13 +104,14 @@ extern "C" {
  * @syngup: pointer to syngup package handle
  * @pkg_ptr: pointer to the blob data (in terms of syn_pkg)
  */
-int syngup_get_synpkg(struct syngup_package* syngup, struct syn_pkg** pkg_ptr);
+int syngup_get_synpkg(struct syngup_package *syngup, struct syn_pkg **pkg_ptr);
 
 /* Get a third party/dynamically generated blob from syngup
  * @syngup: pointer to syngup package handle
  * @pkg_ptr: pointer to the blob data (in terms of syn_pkg)
  */
-int syngup_get_sound_package(struct syngup_package* syngup, struct syn_pkg** pkg_ptr);
+int syngup_get_sound_package(struct syngup_package *syngup,
+                             struct syn_pkg **pkg_ptr);
 
 /* Add a new blob to the syngup package
  * pkg_head: Head of the blob list
@@ -117,8 +119,9 @@ int syngup_get_sound_package(struct syngup_package* syngup, struct syn_pkg** pkg
  * size: size of the blob
  * metadata: 64 bytes of blob metadata
  */
-int syngup_add_component(struct syngup_package* pkg, void* model_data, uint32_t size,
-                         uint8_t* metadata, uint32_t mdata_size);
+int syngup_add_component(struct syngup_package *pkg, void *model_data,
+                         uint32_t size, uint8_t *metadata,
+                         uint32_t mdata_size);
 
 /* Delete a blob from syngup
  * @pkg: Pacakge handle
@@ -126,22 +129,23 @@ int syngup_add_component(struct syngup_package* pkg, void* model_data, uint32_t 
  * @size: size of syngup data (file size)
  * @model_uuid: model identifier
  */
-int syngup_del_blob(struct syngup_package* pkg, uint8_t* data, uint32_t size, uint8_t* model_uuid);
+int syngup_del_blob(struct syngup_package *pkg, uint8_t *data, uint32_t size,
+                    uint8_t *model_uuid);
 
 /* Delete a component (blob)
  * head: head of the pkg list
  * model_uuid: UUID of the blob
  */
-int syngup_del_component(struct syngup_package* pkg, uint8_t* model_uuid);
+int syngup_del_component(struct syngup_package *pkg, uint8_t *model_uuid);
 
 /* Pack and compress all the components in a syngup package
  * Returns the size of the syngup package, 0 if compression fails.
  */
-uint32_t syngup_pack_blobs(struct syngup_package* pkg, uint8_t* buffer);
+uint32_t syngup_pack_blobs(struct syngup_package *pkg, uint8_t *buffer);
 
 /* Compute the total length of all the blobs
  */
-uint32_t syngup_get_total_size(struct syngup_package* pkg, uint32_t blob_size,
+uint32_t syngup_get_total_size(struct syngup_package *pkg, uint32_t blob_size,
                                uint32_t metadata_size);
 
 /*  Extract the blobs from the given memory buffer
@@ -149,26 +153,36 @@ uint32_t syngup_get_total_size(struct syngup_package* pkg, uint32_t blob_size,
  *  @bytes, memory buffer mapping the gup file
  *  @data_size, size of memory buffer
  */
-int syngup_extract_blobs(struct syngup_package* pkg, void* begin_ptr, uint32_t size);
+int syngup_extract_blobs(struct syngup_package *pkg, void *begin_ptr,
+                         uint32_t size);
+
+int syngup_get_host_config(struct syngup_package *syngup,
+                            struct syn_pkg **syn_pkg, 
+                            int32_t *noise_threshold,
+                            uint16_t *noise_thresh_win,
+                            uint32_t *confidence_threshold);
 
 /* Get number of posterior states and classes
  */
-int syngup_get_posterior_data(struct syngup_package * pkgs, struct syn_pkg** pkg, uint32_t* num_states,
-                              uint32_t* num_classes);
+int syngup_get_posterior_data(struct syngup_package *pkgs,
+                              struct syn_pkg **pkg, uint32_t *num_states,
+                              uint32_t *num_classes);
 
 /* Get a blob from syngup given a tag
  */
-int syngup_get_component(struct syn_pkg* pkg_list, struct syn_pkg** pkg, uint32_t tag);
+int syngup_get_component(struct syn_pkg *pkg_list, struct syn_pkg **pkg,
+                         uint32_t tag);
 
 /* Get posterior data of states and classes
  */
-void syngup_posterior_setting(struct syn_pkg* pkg, struct ndp10x_ph_state_params_s* states,
-                              struct ndp10x_ph_class_params_s* classes, uint32_t num_states,
-                              uint32_t num_classes);
+void syngup_posterior_setting(struct syn_pkg *pkg,
+                              struct ndp10x_ph_state_params_s *states,
+                              struct ndp10x_ph_class_params_s *classes,
+                              uint32_t num_states, uint32_t num_classes);
 
 /* Clean up syngup resources
  */
-void syngup_cleanup(struct syngup_package* pkg);
+void syngup_cleanup(struct syngup_package *pkg);
 
 #ifdef __cplusplus
 }

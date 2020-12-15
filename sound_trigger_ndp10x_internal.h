@@ -101,6 +101,10 @@ struct syntiant_ndp10x_stdev {
 #ifdef ENABLE_SPEAKER_ID_SUPPORT
   struct syntiant_speaker_id_s speaker_id;
 #endif
+  /* host config params, not all may be used on a particular platform */
+  int32_t noise_threshold;
+  uint16_t noise_threshold_win;
+  uint32_t confidence_threshold;
 };
 
 int stdev_update_input();

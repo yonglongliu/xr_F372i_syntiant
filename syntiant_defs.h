@@ -17,6 +17,6 @@
 #ifndef SYNTIANT_DEFS_H
 #define SYNTIANT_DEFS_H
 
-char syntiant_internal_version[] = "syntiant_v24";
+char syntiant_internal_version[] = "syntiant_v28";
 
 #endif
